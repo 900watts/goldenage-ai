@@ -403,21 +403,72 @@ function voteNews(id, topic, dir) {
 }
 
 // ---------------- SCAM ENGINE (rule-based) ----------------
-const DANGER_PATTERNS = ['中奖','中大奖','恭喜您','领奖','领取奖品','免费送','零元购','点击链接领取','立即领取','银行卡号','验证码','密码','转账','汇款','安全账户','资金清查','涉嫌洗钱','通缉','高额回报','稳赚不赔','内幕消息','一夜暴富'];
-const CAUTION_PATTERNS = ['客服','退款','退货','订单异常','账户异常','升级','激活','认证','积分兑换','http://','bit.ly','tinyurl'];
+// Danger: clearly fraudulent — phishing, giveaway scams, advance-fee, etc.
+const DANGER_PATTERNS = [
+  // Classic giveaway / prize scams
+  '中奖','中大奖','恭喜您','领奖','领取奖品','免费送','零元购','点击链接领取','立即领取','nowwww','nowww','buy now','limited offer',
+  'roblox','robux','nitro','steam gift','apple gift','amazon gift','netflix free','spotify premium','discord nitro',
+  'free robux','free vbucks','free skins','free gift card','免费皮肤','免费金币','点券','兑换码',
+  // Financial fraud
+  '银行卡号','验证码','密码','转账','汇款','安全账户','资金清查','涉嫌洗钱','通缉','高额回报','稳赚不赔','内幕消息','一夜暴富','刷单','兼职日结','日赚','月入上万',
+  'crypto giveaway','btc giveaway','eth airdrop','double your bitcoin','double your eth','send your crypto',
+  // Investment / advance-fee
+  '投资理财','高息','保本收益','无风险','年化收益','月息','内部消息','拉盘','砸盘','操纵股价','代购','代充','代练','解封','解冻',
+  'low risk high return','guaranteed profit','make money fast','earn daily','passive income',
+  // Impersonation / authority scam
+  '您涉嫌','您已违法','法院传票','刑事拘捕','检察院','安全局','公安厅','中国驻','大使馆',
+  'irs','fbi','cia','social security administration','microsoft support','apple support','amazon support','bank of america security',
+  // Pressure / urgency
+  '24小时内','马上处理','最后通牒','即将停机','冻结账户','强制执行','刑事案件','违法所得',
+  'verify your account','account will be closed','suspended account','verify within 24',
+  // Data harvesting
+  '提供身份证','提供银行卡','提供验证码','点击链接验证','填写信息','完善资料','绑定手机','人脸识别','远程操作',
+  'send your id','send your passport','send your license','ssn','social security number',
+  // Greetings scam
+  'Hello dear','Hi dear','Dear friend','亲爱的',
+];
+
+// Caution: probably safe but worth checking
+const CAUTION_PATTERNS = [
+  '客服','退款','退货','订单异常','账户异常','升级','激活','认证','积分兑换',
+  '微信支付','支付宝','银行转账','手续费','保证金',
+  'meet me','see you','lonely','looking for love','long distance',
+  'http://','bit.ly','tinyurl','t.cn','goo.gl',
+  'gift card','苹果充值','充值卡',
+  'http','链接','登录','激活账户',
+];
 
 function analyzeScam(input) {
   const lower = input.toLowerCase();
   const reasons = [];
   let d = 0, c = 0;
+  // Match both English and Chinese patterns
   for (const p of DANGER_PATTERNS) if (lower.includes(p.toLowerCase())) { d += 2; reasons.push({ zh: `命中高危关键词「${p}」`, en: `High-risk keyword "${p}"` }); }
   for (const p of CAUTION_PATTERNS) if (lower.includes(p.toLowerCase())) { c += 1; reasons.push({ zh: `命中可疑关键词「${p}」`, en: `Suspicious keyword "${p}"` }); }
-  const phoneMatches = input.match(/1[3-9]\d{9}/g);
-  if (phoneMatches) { c += phoneMatches.length; reasons.push({ zh: '包含中国大陆手机号', en: 'Contains CN phone number' }); }
-  const urlMatches = input.match(/https?:\/\/[^\s]+/g);
+
+  // Detect excessive punctuation (!!!!, NOWWW, !!!)
+  const exclamCount = (input.match(/!/g) || []).length;
+  if (exclamCount >= 3) { d += 2; reasons.push({ zh: `过多的感叹号（${exclamCount}个）——典型诈骗手法`, en: `Excessive punctuation (${exclamCount} !) — typical scam tactic` }); }
+  // ALL CAPS
+  const upperLetters = (input.match(/[A-Z]/g) || []).length;
+  if (upperLetters > 8 && upperLetters / input.length > 0.5) { d += 1; reasons.push({ zh: '大量全大写字母（典型诈骗话术）', en: 'Lots of all-caps text (typical scam phrasing)' }); }
+  // Phone numbers (CN + international)
+  const phoneMatches = input.match(/1[3-9]\d{9}|(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3,4}[-.\s]?\d{4}/g);
+  if (phoneMatches) { c += phoneMatches.length; reasons.push({ zh: '包含电话号码', en: 'Contains phone number(s)' }); }
+  // URLs
+  const urlMatches = input.match(/https?:\/\/[^\s]+|www\.[^\s]+/g);
   if (urlMatches) { c += urlMatches.length; reasons.push({ zh: '包含链接', en: 'Contains URL' }); }
-  if (d >= 2) return { verdict: 'danger', reasons, advice: { zh: '极可能是诈骗。请立即删除此信息，不要点击任何链接，不要转账或告知验证码。', en: 'Highly likely a scam. Delete immediately, do not click links, do not transfer money or share codes.' } };
-  if (c >= 2 || d === 1) return { verdict: 'caution', reasons, advice: { zh: '信息中存在可疑内容，请先核实。切勿透露个人信息或转账。', en: 'Suspicious content detected. Verify first. Never share personal info or transfer money.' } };
+  // Money amounts ($10, ¥100, USD/oz, etc.)
+  const moneyMatches = input.match(/[\$¥€£￥]\s*\d|\d+\s*[\$¥€£￥]|\$\d+|\d+\s*usd|for \$/gi);
+  if (moneyMatches) { d += 1; reasons.push({ zh: `包含金额「${moneyMatches[0]}」`, en: `Contains money amount "${moneyMatches[0]}"` }); }
+  // Specific known scam phrases
+  if (/free\s+(robux|vbucks|skins|gems|coins|nitro|steam|netflix|spotify)/i.test(input)) { d += 3; reasons.push({ zh: '典型游戏/平台诈骗话术', en: 'Classic gaming/platform giveaway scam' }); }
+  if (/1,000,000|1 million|1000000|1000\s*000|million|ten\s*free/i.test(input)) { d += 1; reasons.push({ zh: '承诺巨额奖励（典型钓鱼特征）', en: 'Promises huge rewards (phishing pattern)' }); }
+  if (/click\s*now|hurry|act\s*now|don'?t\s*miss|expires\s*soon|click\s*here/i.test(input)) { d += 1; reasons.push({ zh: '催促点击（典型钓鱼）', en: 'Urgency language (typical phishing)' }); }
+  if (/send\s*me|reply\s*with|dm\s*me|message\s*me|whatsapp|telegram/i.test(input)) { c += 1; reasons.push({ zh: '引导您通过其他平台联系（典型诈骗）', en: 'Asks you to switch to another platform (typical scam)' }); }
+
+  if (d >= 2) return { verdict: 'danger', reasons, advice: { zh: '极可能是诈骗。典型特征：巨额奖励、催促点击、索取验证码或个人信息。请立即删除，不要点击任何链接，不要转账或告知验证码。', en: 'Highly likely a scam. Typical signs: huge rewards, urgency tactics, asking for verification codes or personal info. Delete immediately, do not click links, do not transfer money.' } };
+  if (c >= 2 || d === 1) return { verdict: 'caution', reasons, advice: { zh: '信息中存在可疑内容，请先核实对方身份。切勿透露个人信息或转账。', en: 'Suspicious content detected. Verify who sent this first. Never share personal info or transfer money.' } };
   return { verdict: 'safe', reasons: [{ zh: '无命中规则', en: 'No rules matched' }], advice: { zh: '未发现明显风险。但仍请保持警惕，陌生信息不要轻信。', en: 'No obvious risk. Stay cautious with unfamiliar messages.' } };
 }
 

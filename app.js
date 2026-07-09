@@ -662,12 +662,26 @@ function renderAuth(root) {
       renderAuth._email = v;
       if (sb) {
         try {
-          // Supabase email OTP — signInWithOtp with email option
-          const { error } = await sb.auth.signInWithOtp({
+          // Use link-based signInWithOtp (Supabase returns session directly
+          // when mailer_autoconfirm=true on the project).
+          const { data, error } = await sb.auth.signInWithOtp({
             email: v,
-            options: { shouldCreateUser: true }
+            options: {
+              shouldCreateUser: true,
+              emailRedirectTo: window.location.origin + window.location.pathname,
+            }
           });
           if (error) throw error;
+          // If autoconfirm is on, the session is returned immediately
+          if (data && data.session) {
+            sbUser = data.session.user;
+            state.signedIn = true;
+            localStorage.setItem('signedIn', 'true');
+            toast(state.lang==='zh' ? '登录成功，欢迎！' : 'Welcome!');
+            applyState();
+            return;
+          }
+          // Otherwise show the OTP entry screen
           renderAuth._otpMode = true;
           render();
           startResendTimer('email');

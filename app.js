@@ -49,7 +49,7 @@ const I18N = {
     medTitle: '用药管理', medTaken: '已服药', medSkip: '跳过', medAdd: '添加提醒',
     medTake1: '降压药', medTake1Sub: '08:00 · 20:00 · 饭后服用',
     medTake2: '钙片', medTake2Sub: '12:00 · 随午餐',
-    meTitle: '我的', meName: '王爷爷', meEmergency: '紧急联系人 · 王小明',
+    meTitle: '我的', meName: '', meEmergency: '', meNoEmergency: '未设置紧急联系人',
     meLang: '语言', meAccess: '无障碍设置', meBigText: '大字模式', meDark: '深色模式',
     meLogout: '退出登录',
     authTitle: '欢迎使用智享银龄', authSubtitle: '请输入您的手机号以继续',
@@ -100,7 +100,7 @@ const I18N = {
     medTitle: 'Medication', medTaken: 'Taken', medSkip: 'Skip', medAdd: 'Add Reminder',
     medTake1: 'Blood Pressure Meds', medTake1Sub: '08:00 · 20:00 · with food',
     medTake2: 'Calcium', medTake2Sub: '12:00 · with lunch',
-    meTitle: 'Profile', meName: 'Grandpa Wang', meEmergency: 'Emergency · Xiao Ming',
+    meTitle: 'Profile', meName: '', meEmergency: '', meNoEmergency: 'No emergency contact set',
     meLang: 'Language', meAccess: 'Accessibility', meBigText: 'Big Text Mode', meDark: 'Dark Mode',
     meLogout: 'Log Out',
     authTitle: 'Welcome to GoldenAge', authSubtitle: 'Enter your phone to continue',
@@ -178,6 +178,7 @@ const state = {
   signedIn: localStorage.getItem('signedIn') === 'true',
   aiOpen: false,
   newsTab: "all",
+  profile: null, // loaded from Supabase auth.users + profile table
   chat: [],
   recording: false,
   listening: false,
@@ -267,50 +268,12 @@ const ICON = {
 };
 
 // ---------------- DATA ----------------
-const POI = {
-  hospital: [
-    { id: 'h1', name: { zh: '协和医院', en: 'Union Hospital' }, addr: { zh: '东单北大街9号', en: '9 Dongdan N St' }, dist: 800 },
-    { id: 'h2', name: { zh: '同仁医院', en: 'Tongren Hospital' }, addr: { zh: '崇文门内大街8号', en: '8 Chongwenmen Inner St' }, dist: 1500 },
-  ],
-  pharmacy: [
-    { id: 'p1', name: { zh: '老百姓大药房', en: 'LBX Pharmacy' }, addr: { zh: '前门西大街12号', en: '12 Qianmen W St' }, dist: 300 },
-    { id: 'p2', name: { zh: '同仁堂药店', en: 'Tongrentang Pharmacy' }, addr: { zh: '大栅栏街24号', en: '24 Dashilan St' }, dist: 650 },
-  ],
-  park: [
-    { id: 'k1', name: { zh: '中山公园', en: 'Zhongshan Park' }, addr: { zh: '中华路4号', en: '4 Zhonghua Rd' }, dist: 1200 },
-  ],
-  supermarket: [
-    { id: 's1', name: { zh: '物美超市', en: 'Wumart' }, addr: { zh: '前门大街18号', en: '18 Qianmen St' }, dist: 400 },
-  ],
-};
+// (All mock data removed — every screen now fetches live data.)
 
-const QUOTES = [
-  { id: 'GC=F', name: { zh: '黄金（USD/oz）', en: 'Gold (USD/oz)' }, price: 2345.6, change: 18.4, pct: 0.79 },
-  { id: 'SI=F', name: { zh: '白银（USD/oz）', en: 'Silver (USD/oz)' }, price: 30.8, change: -0.22, pct: -0.71 },
-  { id: '000001.SS', name: { zh: '上证指数', en: 'Shanghai' }, price: 3245.7, change: 12.3, pct: 0.38 },
-  { id: '^GSPC', name: { zh: '标普500', en: 'S&P 500' }, price: 5460.1, change: -8.4, pct: -0.15 },
-];
-
-const NEWS = [
-  { title: { zh: '社区启动免费健康检查项目', en: 'Community launches free health checks' },
-    sum: { zh: '本周末开始，全市 12 个社区中心提供免费血压、血糖、心电图检查，60 岁以上长者优先。',
-            en: 'Starting this weekend, 12 community centers offer free BP, glucose, ECG checks. Seniors 60+ prioritized.' },
-    src: 'City Health' },
-  { title: { zh: '今明两天有雨，气温下降 6 度', en: 'Rain expected, temps drop 6°' },
-    sum: { zh: '气象局提醒长者注意保暖，外出携带雨具。周末天气转晴。',
-            en: 'Meteorologists advise seniors to dress warmly and carry umbrellas. Sunny weekend ahead.' },
-    src: 'Weather' },
-  { title: { zh: '子女陪父母就医可享 5 天带薪假', en: '5-day paid leave to accompany parents' },
-    sum: { zh: '新法规鼓励家庭陪护，企业反响积极。',
-            en: 'New policy encourages family care. Enterprises respond positively.' },
-    src: 'Gov Daily' },
-];
-
-// Medication state: track which meds have been taken/skipped today
-const MEDS = [
-  { id: 'm1', name: () => t('medTake1'), sub: () => t('medTake1Sub') },
-  { id: 'm2', name: () => t('medTake2'), sub: () => t('medTake2Sub') },
-];
+// Medication state — no mock default meds. Users add their own via the UI;
+// the screen starts empty and fetches the user's saved list from Supabase.
+// (When not signed in or before any meds are added, the screen shows a
+// friendly empty state and a CTA to add the first medication.)
 const medState = {}; // { 'm1': 'taken', 'm2': 'skipped' } — persists in localStorage
 function loadMedState() {
   try { Object.assign(medState, JSON.parse(localStorage.getItem('medState') || '{}')); } catch(_) {}
@@ -969,7 +932,7 @@ function renderHome(root) {
           <div class="summary-icon" style="background:linear-gradient(135deg,${medState['m1']==='taken'?'var(--safe)':'var(--gold)'},#D97706)">${medState['m1']==='taken'?ICON.check:ICON.pill}</div>
           <div class="summary-text">
             <div class="summary-label">${t('nextMed')}</div>
-            <div class="summary-value">${medState['m1']==='taken'?(state.lang==='zh'?'今日已服药':'Already taken'):t('medTake1')+' · 14:00'}</div>
+            <div class="summary-value" id="homeMed">…</div>
           </div>
         </div>
         <div class="summary-row" data-go="finance" style="cursor:pointer">
@@ -1002,6 +965,32 @@ function renderHome(root) {
   document.getElementById('sosBtn').onclick = triggerSos;
   document.getElementById('aiEntry').onclick = openSheet;
   root.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
+  // Live fetches for home summary (real meds from Supabase)
+  (async () => {
+    // Get next medication from real data
+    const homeMed = document.getElementById('homeMed');
+    if (homeMed) {
+      try {
+        let nextMed = null;
+        if (sbReady()) {
+          const { data } = await sb.from('medication_schedules')
+            .select('name, time_of_day')
+            .eq('user_id', sbUser.id)
+            .order('time_of_day', { ascending: true })
+            .limit(1);
+          if (data && data[0]) nextMed = data[0];
+        } else {
+          const allMeds = customMeds;
+          if (allMeds.length) nextMed = allMeds[0];
+        }
+        if (nextMed) {
+          homeMed.textContent = (state.lang==='zh' ? '⏰ ' : '⏰ ') + nextMed.name + ' · ' + (nextMed.time_of_day || nextMed.time);
+        } else {
+          homeMed.innerHTML = '<span style="color:var(--muted-app)">'+ (state.lang==='zh'?'尚未设置提醒 · 点击添加':'No reminder set · tap to add') +'</span>';
+        }
+      } catch(_) { if (homeMed) homeMed.textContent = '—'; }
+    }
+  })();
   // Live fetches for home summary
   (async () => {
     try {
@@ -1519,12 +1508,40 @@ function fakeQrSvg(text) {
 }
 
 // --- MEDICATION ---
-function renderMedication(root) {
-  const allMeds = [...MEDS, ...customMeds.map((m, i) => ({
+async function renderMedication(root) {
+  // No mock data — load meds from Supabase (or localStorage as fallback)
+  let userMeds = [];
+  if (sbReady()) {
+    try {
+      const { data, error } = await sb.from('medication_schedules')
+        .select('*')
+        .eq('user_id', sbUser.id)
+        .order('time_of_day', { ascending: true });
+      if (!error && data) userMeds = data.map(m => ({
+        id: m.id,
+        name: () => m.name,
+        sub: () => m.time_of_day + (m.notes ? ' · ' + m.notes : ''),
+      }));
+    } catch(_) {}
+  }
+  if (!userMeds.length) userMeds = customMeds.map((m, i) => ({
     id: 'c' + i,
     name: () => m.name,
     sub: () => m.time + (m.notes ? ' · ' + m.notes : ''),
-  }))];
+  }));
+  const allMeds = userMeds;
+  if (!allMeds.length) {
+    root.innerHTML = `
+      <h2 class="section-title">${t('medTitle')}</h2>
+      <div class="card" style="text-align:center;padding:48px 20px;background:var(--card-app);border:1px dashed var(--border-app);border-radius:18px">
+        <div style="width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,var(--gold),#D97706);display:inline-flex;align-items:center;justify-content:center;margin-bottom:16px">${ICON.pill}</div>
+        <h3 style="font-size:1.3rem;margin-bottom:8px">${state.lang==='zh'?'还没有用药提醒':'No medication reminders yet'}</h3>
+        <p class="text-soft" style="margin-bottom:20px">${state.lang==='zh'?'点击下方按钮添加您的第一个用药提醒。AI 会在每个时间点提醒您服药。':'Tap the button below to add your first medication reminder. AI will alert you when it is time.'}</p>
+        <button class="big-btn primary" id="addMed" style="max-width:320px;margin:0 auto">${ICON.pill}<span>${t('medAdd')}</span></button>
+      </div>`;
+    document.getElementById('addMed').onclick = () => addMedication();
+    return;
+  }
   root.innerHTML = `
     <h2 class="section-title">${t('medTitle')}</h2>
     <div class="auto-grid">
@@ -1609,6 +1626,17 @@ async function addMedication() {
   });
   customMeds.push({ name, time: time || '08:00', notes: notes || '' });
   saveCustomMeds();
+  // Also save to Supabase if signed in
+  if (sbReady()) {
+    try {
+      await sb.from('medication_schedules').insert({
+        user_id: sbUser.id,
+        name,
+        time_of_day: time || '08:00',
+        notes: notes || ''
+      });
+    } catch(e) { console.warn('Med schedule save failed:', e); }
+  }
   toast(state.lang==='zh' ? '已添加用药提醒' : 'Reminder added');
   render();
 }
@@ -1635,17 +1663,64 @@ function promptDialog({ title, placeholder }) {
 }
 
 // --- PROFILE ---
-function renderMe(root) {
+async function editProfile() {
+  const isZh = state.lang === 'zh';
+  const name = await promptDialog({
+    title: isZh ? '您的称呼' : 'Your name',
+    placeholder: isZh ? '如：王爷爷' : 'e.g. John',
+  });
+  if (name === null) return;
+  const emergency = await promptDialog({
+    title: isZh ? '紧急联系人姓名' : 'Emergency contact name',
+    placeholder: isZh ? '如：儿子 王小明' : 'e.g. Son John Jr.',
+  });
+  if (emergency === null) return;
+  state.profile = { ...(state.profile || {}), display_name: name, full_name: name, emergency_contact: emergency, emergency_name: emergency };
+  if (sbReady()) {
+    try {
+      await sb.from('profiles').upsert({
+        user_id: sbUser.id,
+        display_name: name,
+        full_name: name,
+        emergency_contact: emergency,
+        emergency_name: emergency,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'user_id' });
+    } catch(e) { console.warn('Profile save failed:', e); }
+  }
+  toast(isZh ? '已保存' : 'Saved');
+  render();
+}
+
+async function renderMe(root) {
+  // Load profile from Supabase if not yet loaded
+  if (sbReady() && !state.profile) {
+    try {
+      const { data } = await sb.from('profiles')
+        .select('*')
+        .eq('user_id', sbUser.id)
+        .maybeSingle();
+      state.profile = data || null;
+    } catch(_) { state.profile = null; }
+  }
+  const p = state.profile || {};
+  const userEmail = sbUser?.email || '';
+  const userPhone = sbUser?.phone || '';
+  const displayName = p.display_name || p.full_name || (userEmail ? userEmail.split('@')[0] : (state.lang==='zh'?'用户':'User'));
+  const emergency   = p.emergency_contact || p.emergency_name || (state.lang==='zh'?'未设置紧急联系人':'No emergency contact set');
+  const initial     = (displayName[0] || '?').toUpperCase();
   root.innerHTML = `
     <h2 class="section-title">${t('meTitle')}</h2>
     <div style="display:flex;align-items:center;gap:16px;margin-bottom:24px">
-      <div style="width:72px;height:72px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      <div style="width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--cta));color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.8rem;font-weight:700">
+        ${escapeHtml(initial)}
       </div>
-      <div>
-        <div style="font-size:1.4rem;font-weight:700">${t('meName')}</div>
-        <div class="text-soft" style="font-size:.9rem">${t('meEmergency')}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:1.4rem;font-weight:700">${escapeHtml(displayName)}</div>
+        <div class="text-soft" style="font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(userEmail || userPhone || '')}</div>
+        <div class="text-soft" style="font-size:.85rem;margin-top:2px">${state.lang==='zh'?'紧急联系人：':'Emergency: '}${escapeHtml(emergency)}</div>
       </div>
+      <button class="big-btn ghost" id="editProfileBtn" style="width:auto;min-width:0;padding:10px 16px;font-size:.95rem">${state.lang==='zh'?'编辑':'Edit'}</button>
     </div>
 
     <h3 style="font-size:1.1rem;margin-bottom:8px">${t('meAccess')}</h3>
@@ -1671,12 +1746,15 @@ function renderMe(root) {
     </div>
 
     <button class="big-btn danger" id="logoutBtn">${ICON.close}<span>${t('meLogout')}</span></button>`;
+  const epBtn = document.getElementById('editProfileBtn');
+  if (epBtn) epBtn.onclick = () => editProfile();
   document.getElementById('bigToggle').onclick = () => { state.bigText = !state.bigText; applyState(); };
   document.getElementById('darkToggle').onclick = () => { state.dark = !state.dark; applyState(); };
   document.getElementById('langToggle').onclick = () => { state.lang = state.lang === 'zh' ? 'en' : 'zh'; applyState(); };
   document.getElementById('logoutBtn').onclick = async () => {
     if (sb) { try { await sb.auth.signOut(); } catch(_) {} }
     sbUser = null;
+    state.profile = null;
     state.signedIn = false;
     state.chat = [];
     localStorage.removeItem('signedIn');

@@ -49,10 +49,11 @@ const I18N = {
     medTitle: '用药管理', medTaken: '已服药', medSkip: '跳过', medAdd: '添加提醒',
     medTake1: '降压药', medTake1Sub: '08:00 · 20:00 · 饭后服用',
     medTake2: '钙片', medTake2Sub: '12:00 · 随午餐',
-    meTitle: '我的', meName: '王爷爷', mePhone: '138****8888', meEmergency: '紧急联系人 · 王小明',
+    meTitle: '我的', meName: '王爷爷', meEmergency: '紧急联系人 · 王小明',
     meLang: '语言', meAccess: '无障碍设置', meBigText: '大字模式', meDark: '深色模式',
     meLogout: '退出登录',
-    authTitle: '欢迎使用智享银龄', authSub: '请输入手机号以继续',
+    authTitle: '欢迎使用智享银龄', authSubtitle: '请输入您的手机号以继续',
+    authPhoneLabel: '手机号',
     authPlaceholder: '+86 138 0000 0000', authSend: '发送验证码',
     authOtpTitle: '请输入验证码', authOtpSub: '验证码已发送至 ', authVerify: '验证', authResend: '重新发送',
     aiBubbleLabel: '智能助手', aiBubbleOnline: '已就绪',
@@ -94,10 +95,11 @@ const I18N = {
     medTitle: 'Medication', medTaken: 'Taken', medSkip: 'Skip', medAdd: 'Add Reminder',
     medTake1: 'Blood Pressure Meds', medTake1Sub: '08:00 · 20:00 · with food',
     medTake2: 'Calcium', medTake2Sub: '12:00 · with lunch',
-    meTitle: 'Profile', meName: 'Grandpa Wang', mePhone: '138****8888', meEmergency: 'Emergency · Xiao Ming',
+    meTitle: 'Profile', meName: 'Grandpa Wang', meEmergency: 'Emergency · Xiao Ming',
     meLang: 'Language', meAccess: 'Accessibility', meBigText: 'Big Text Mode', meDark: 'Dark Mode',
     meLogout: 'Log Out',
-    authTitle: 'Welcome to GoldenAge', authSub: 'Enter your phone to continue',
+    authTitle: 'Welcome to GoldenAge', authSubtitle: 'Enter your phone to continue',
+    authPhoneLabel: 'Phone number',
     authPlaceholder: '+1 555 000 0000', authSend: 'Send Code',
     authOtpTitle: 'Enter the code', authOtpSub: 'Code sent to ', authVerify: 'Verify', authResend: 'Resend',
     aiBubbleLabel: 'Companion', aiBubbleOnline: 'Online',
@@ -543,7 +545,7 @@ function renderAuth(root) {
         </div>
       ` : `
         <div style="width:100%;max-width:360px">
-          <label class="field-label">${t('mePhone')}</label>
+          <label class="field-label">${t('authPhoneLabel')}</label>
           <input id="phoneInput" value="${escapeHtml(phone)}" placeholder="${t('authPlaceholder')}">
           <div style="height:16px"></div>
           <button class="big-btn primary" id="sendBtn">${t('authSend')}</button>
@@ -1103,7 +1105,6 @@ function renderMe(root) {
       </div>
       <div>
         <div style="font-size:1.4rem;font-weight:700">${t('meName')}</div>
-        <div class="text-soft">${t('mePhone')}</div>
         <div class="text-soft" style="font-size:.9rem">${t('meEmergency')}</div>
       </div>
     </div>

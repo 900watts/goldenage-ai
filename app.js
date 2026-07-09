@@ -974,9 +974,10 @@ function renderHome(root) {
         let nextMed = null;
         if (sbReady()) {
           const { data } = await sb.from('medication_schedules')
-            .select('name, time_of_day')
+            .select('med_name, schedule_times')
             .eq('user_id', sbUser.id)
-            .order('time_of_day', { ascending: true })
+            .eq('active', true)
+            .order('created_at', { ascending: true })
             .limit(1);
           if (data && data[0]) nextMed = data[0];
         } else {
@@ -984,7 +985,7 @@ function renderHome(root) {
           if (allMeds.length) nextMed = allMeds[0];
         }
         if (nextMed) {
-          homeMed.textContent = (state.lang==='zh' ? '⏰ ' : '⏰ ') + nextMed.name + ' · ' + (nextMed.time_of_day || nextMed.time);
+          homeMed.textContent = (state.lang==='zh' ? '⏰ ' : '⏰ ') + nextMed.med_name + ' · ' + (Array.isArray(nextMed.schedule_times) ? nextMed.schedule_times[0] : (nextMed.schedule_times || '08:00'));
         } else {
           homeMed.innerHTML = '<span style="color:var(--muted-app)">'+ (state.lang==='zh'?'尚未设置提醒 · 点击添加':'No reminder set · tap to add') +'</span>';
         }
@@ -1514,13 +1515,14 @@ async function renderMedication(root) {
   if (sbReady()) {
     try {
       const { data, error } = await sb.from('medication_schedules')
-        .select('*')
+        .select('id, med_name, schedule_times, notes, dosage')
         .eq('user_id', sbUser.id)
-        .order('time_of_day', { ascending: true });
+        .eq('active', true)
+        .order('created_at', { ascending: true });
       if (!error && data) userMeds = data.map(m => ({
         id: m.id,
-        name: () => m.name,
-        sub: () => m.time_of_day + (m.notes ? ' · ' + m.notes : ''),
+        name: () => m.med_name || m.name || '—',
+        sub: () => (Array.isArray(m.schedule_times) ? m.schedule_times.join(', ') : (m.schedule_times || m.time_of_day || '08:00')) + (m.notes ? ' · ' + m.notes : '') + (m.dosage ? ' · ' + m.dosage : ''),
       }));
     } catch(_) {}
   }
@@ -1631,8 +1633,8 @@ async function addMedication() {
     try {
       await sb.from('medication_schedules').insert({
         user_id: sbUser.id,
-        name,
-        time_of_day: time || '08:00',
+        med_name: name,
+        schedule_times: (time || '08:00').split(',').map(s => s.trim()).filter(Boolean),
         notes: notes || ''
       });
     } catch(e) { console.warn('Med schedule save failed:', e); }

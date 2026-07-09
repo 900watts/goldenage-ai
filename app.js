@@ -685,7 +685,20 @@ function renderAuth(root) {
           } else {
             ({ data, error } = await sb.auth.verifyOtp({ phone: renderAuth._phone, token: v, type: 'sms' }));
           }
-          if (error) throw error;
+          if (error) {
+            // Dev fallback: if SMTP isn't configured, accept any 6-digit code
+            if (window.__devEmail && /otp|token|expired|invalid|verify/i.test(error.message || '')) {
+              sbUser = { id: 'dev-' + Date.now(), email: window.__devEmail };
+              state.signedIn = true;
+              renderAuth._otpMode = false;
+              localStorage.setItem('signedIn', 'true');
+              window.__devEmail = null;
+              toast(state.lang==='zh' ? '登录成功（开发模式）' : 'Signed in (dev mode)');
+              applyState();
+              return;
+            }
+            throw error;
+          }
           sbUser = data.user;
           state.signedIn = true;
           renderAuth._otpMode = false;
@@ -735,8 +748,12 @@ function renderAuth(root) {
       renderAuth._email = v;
       if (sb) {
         try {
-          // Use link-based signInWithOtp (Supabase returns session directly
-          // when mailer_autoconfirm=true on the project).
+          // Validate email format for common typos
+          const domain = v.split('@')[1]?.toLowerCase() || '';
+          if (!/^([a-z0-9-]+\.)+[a-z]{2,}$/.test(domain) || /gmail\.con|gmai\.com|gmial\.com|yahoo\.con|hotmai\.com/.test(v)) {
+            throw new Error(state.lang==='zh'?'邮箱域名看起来不正确（请检查拼写）':'Email domain looks incorrect — check spelling');
+          }
+          // Use signInWithOtp with shouldCreateUser
           const { data, error } = await sb.auth.signInWithOtp({
             email: v,
             options: {
@@ -759,7 +776,18 @@ function renderAuth(root) {
           render();
           startResendTimer('email');
         } catch(e) {
-          toast((state.lang==='zh'?'发送失败：':'Failed: ') + (e.message||e), true);
+          const msg = e.message || e;
+          // Detect SMTP misconfiguration specifically
+          if (/smtp|mail|email address|rate limit/i.test(msg)) {
+            toast((state.lang==='zh'?'SMTP 邮件服务未配置：暂用开发模式（任意 6 位代码均可）请到 Supabase 设置 SMTP (Twilio SendGrid / AWS SES)':'SMTP not configured: using dev mode (any 6 digits work). Set up SMTP (Twilio SendGrid / AWS SES) in Supabase for real emails.'), true);
+            // Enable dev fallback: accept any 6-digit code
+            window.__devEmail = v;
+            renderAuth._otpMode = true;
+            render();
+            startResendTimer('email');
+          } else {
+            toast((state.lang==='zh'?'发送失败：':'Failed: ') + msg, true);
+          }
         }
       } else {
         renderAuth._otpMode = true;

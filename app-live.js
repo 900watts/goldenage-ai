@@ -146,35 +146,62 @@ async function fetchDailyDigest() {
 
 // ---------- POI: OpenStreetMap Nominatim (no API key) ----------
 // https://operations.osmfoundation.org/policies/nominatim/
+// Uses keyword search + reverse geocoding (no Overpass dependency)
+const POI_QUERIES = {
+  hospital:    { query: '医院',          en: 'hospital' },
+  pharmacy:    { query: '药店 药房',     en: 'pharmacy' },
+  park:        { query: '公园',          en: 'park' },
+  supermarket: { query: '超市 便利店',  en: 'supermarket' },
+};
+
 async function fetchPOIs(kind, lat = 39.9085, lng = 116.3975) {
-  // Beijing center as default
-  const queries = {
-    hospital:    `[amenity=hospital]`,
-    pharmacy:    `[amenity=pharmacy]`,
-    park:        `[leisure=park]`,
-    supermarket: `[shop=supermarket]`,
-  };
-  const q = `${queries[kind] || queries.hospital}(around:3000,${lat},${lng})`;
+  // Use browser geolocation when available
+  if (navigator.geolocation) {
+    try {
+      const pos = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(p => resolve(p), () => reject(), { timeout: 4000, maximumAge: 60000 });
+      });
+      if (pos && pos.coords) { lat = pos.coords.latitude; lng = pos.coords.longitude; }
+    } catch (_) { /* fall through to default */ }
+  }
+  // Reverse geocode to get human-readable address
+  let district = 'Beijing';
+  try {
+    const rev = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=${state.lang === 'zh' ? 'zh' : 'en'}`,
+      { headers: { 'User-Agent': _UA } }
+    );
+    if (rev.ok) {
+      const d = await rev.json();
+      const a = d.address || {};
+      district = a.suburb || a.city || a.town || a.village || a.state || district;
+    }
+  } catch (_) {}
+  // Search for POI near this address
+  const config = POI_QUERIES[kind] || POI_QUERIES.hospital;
+  const searchTerm = state.lang === 'zh' ? `${config.query} ${district}` : `${config.en} near ${district}`;
   try {
     const res = await fetch(
-      `https://overpass-api.de/api/interpreter?data=[out:json][timeout:10];${q};out 20;`,
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(searchTerm)}&format=json&addressdetails=1&limit=12&accept-language=${state.lang === 'zh' ? 'zh' : 'en'}`,
       { headers: { 'User-Agent': _UA } }
     );
     if (!res.ok) return null;
-    const d = await res.json();
-    return (d.elements || []).slice(0, 10).map((el, i) => {
-      const tags = el.tags || {};
-      const name = tags.name || tags['name:en'] || tags['name:zh'] || 'Unknown';
-      const street = (tags['addr:street'] || '') + ' ' + (tags['addr:housenumber'] || '');
-      const city = tags['addr:city'] || '';
-      const elat = el.lat;
-      const elng = el.lon;
-      const dist = elat && elng ? Math.round(haversine(lat, lng, elat, elng)) : null;
+    const arr = await res.json();
+    return arr.slice(0, 10).map((el, i) => {
+      const a = el.address || {};
+      const road = a.road || a.pedestrian || a.footway || '';
+      const houseNum = a.house_number || '';
+      const addrParts = [road, houseNum, a.suburb || a.city_district || a.city || a.town || a.village].filter(Boolean);
+      const street = addrParts.slice(0, 3).join(' ');
+      const elat = parseFloat(el.lat);
+      const elng = parseFloat(el.lon);
+      const dist = elat && elng ? Math.round(haversine(lat, lng, elat, elng)) : 999;
+      const displayName = el.display_name || el.name || 'POI';
       return {
-        id: el.id?.toString() || (kind + i),
-        name: { zh: tags['name:zh'] || name, en: tags['name:en'] || name },
-        addr: { zh: (street + ' ' + city).trim() || '附近', en: (street + ' ' + city).trim() || 'Nearby' },
-        dist: dist || 999,
+        id: (el.place_id || (kind + i)).toString(),
+        name: { zh: displayName, en: displayName },
+        addr: { zh: street || '附近', en: street || 'Nearby' },
+        dist: dist,
         lat: elat, lng: elng,
       };
     });

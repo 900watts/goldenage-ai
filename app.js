@@ -486,9 +486,39 @@ const TOOLS = {
   call_sos:    { reply: () => t('aiReplySos'), action: () => triggerSos(false) },
 };
 
+// Helper: scan a long message for scam signals and return a concise verdict
+function aiScamCheck(text) {
+  if (!text || text.length < 15) return null;
+  // Skip if text is clearly a chat command (already handled by aiMatchTool)
+  if (aiMatchTool(text)) return null;
+  const r = analyzeScam(text);
+  // Only surface danger or caution, not safe (too noisy for a chat)
+  if (r.verdict === 'danger') {
+    return {
+      reply: state.lang==='zh'
+        ? `⚠️ 警告：这条消息很可能是诈骗。\n\n${r.advice.zh}\n\n命中特征：\n${r.reasons.slice(0,4).map(x => '• ' + x.zh).join('\n')}\n\n已为您打开「防诈骗检测」查看详情。`
+        : `⚠️ Warning: this message is very likely a scam.\n\n${r.advice.en}\n\nSignals detected:\n${r.reasons.slice(0,4).map(x => '• ' + x.en).join('\n')}\n\nOpening Anti-Scam Shield for full analysis.`,
+      tool: '🛡️ ai_scam_check',
+      action: () => go('scam'),
+    };
+  }
+  if (r.verdict === 'caution') {
+    return {
+      reply: state.lang==='zh'
+        ? `⚠️ 提醒：这条消息中有可疑内容。\n\n${r.advice.zh}\n\n命中特征：\n${r.reasons.slice(0,3).map(x => '• ' + x.zh).join('\n')}\n\n让我帮您打开「防诈骗检测」进一步分析。`
+        : `⚠️ Heads up: this message has suspicious content.\n\n${r.advice.en}\n\nSignals detected:\n${r.reasons.slice(0,3).map(x => '• ' + x.en).join('\n')}\n\nOpening Anti-Scam Shield for further analysis.`,
+      tool: '🛡️ ai_scam_check',
+      action: () => go('scam'),
+    };
+  }
+  return null;
+}
+
 function aiMatchTool(text) {
   const lower = text.toLowerCase();
   if (/sos|求助|救命|紧急|fall|chest|emergency|help/i.test(text)) return 'call_sos';
+  // Detect "is this a scam?" / "check this message" intent
+  if (/(这|这是|这条|这个|这个短信|这条信息|is this|check.*scam|verify.*scam|spam|fraud|诈骗\?|可疑\?|骗子\?|骗\?|is it safe|should i|can i trust|能信|可不可以信|看.*是不是|帮我看看|帮我查|帮我.*判断)/i.test(text)) return 'check_scam';
   if (/(打开|open).*(地图|map)|附近|nearby|药房|医院|pharmacy|hospital/i.test(text)) return 'open_map';
   if (/(金价|gold|价格|price|行情|finance|股票|stock|指数|index)/i.test(text)) return 'open_finance';
   if (/(新闻|news|今天.*新闻|今天.*发生|今天的|今日)/i.test(text)) return 'open_news';
@@ -498,8 +528,36 @@ function aiMatchTool(text) {
 }
 
 function aiChat(userText) {
+  // 1) First, run a heuristic scam check on the message itself.
+  //    If the user pastes a suspicious message into the chat, the AI
+  //    should warn them — even if they didn't say "check this".
+  const scam = aiScamCheck(userText);
+  if (scam) {
+    if (scam.action) scam.action();
+    return { reply: scam.reply, tool: scam.tool };
+  }
+
+  // 2) Otherwise, run the normal tool router.
   const tool = aiMatchTool(userText);
   if (tool) {
+    if (tool === 'check_scam') {
+      // They want to verify something — analyze whatever they pasted
+      // (if there's text in the input beyond the question, use it)
+      const quoted = (userText.match(/[""「]([^""」]+)[""」]/) || [])[1] || '';
+      if (quoted) {
+        const r = analyzeScam(quoted);
+        const verdictLabel = r.verdict === 'danger' ? (state.lang==='zh'?'极可能是诈骗':'Highly likely a scam') : r.verdict === 'caution' ? (state.lang==='zh'?'信息中有可疑内容':'Suspicious content') : (state.lang==='zh'?'未发现明显风险':'No obvious risk');
+        return {
+          reply: state.lang==='zh'
+            ? `${verdictLabel}\n\n${r.advice.zh}\n\n命中特征：\n${r.reasons.slice(0,5).map(x => '• ' + x.zh).join('\n') || '（无）'}`
+            : `${verdictLabel}\n\n${r.advice.en}\n\nSignals:\n${r.reasons.slice(0,5).map(x => '• ' + x.en).join('\n') || '(none)'}`,
+          tool: '🛡️ check_scam'
+        };
+      }
+      // No quoted text — open the scam screen
+      TOOLS.open_scam.action();
+      return { reply: TOOLS.open_scam.reply(), tool: '🔧 open_scam' };
+    }
     const def = TOOLS[tool];
     def.action();
     return { reply: def.reply(), tool: '🔧 ' + tool };

@@ -65,11 +65,10 @@ body{
   grid-template-columns:260px 1fr;
 }
 #app.no-sidebar{
-  grid-template-columns:0 1fr;
+  grid-template-columns:0fr 1fr;
 }
-.side-nav:has(.pc-only),
-.side-nav:empty{
-  display:none;
+#app.no-sidebar .side-nav{
+  display:none !important;
 }
 /* Left sidebar nav (PC layout) */
 .side-nav{
@@ -538,9 +537,11 @@ label.field-label{display:block;font-weight:600;margin-bottom:8px;font-size:1rem
   .pc-only{display:initial !important}
   .screen{padding:28px 36px 60px;max-width:none;overflow-y:auto}
   .dialog-mask{padding:60px}
-  /* Sidebar visible only when not on auth screen */
+  /* Sidebar always visible on PC when signed in */
   .side-nav:not(.hidden){display:flex}
   .side-nav.hidden{display:none !important}
+  /* When no-sidebar, sidebar is gone, content fills */
+  #app.no-sidebar .side-nav{display:none !important}
   .bottom-nav{display:none}
   /* Bigger headings on PC */
   .greeting{font-size:2rem}
@@ -551,8 +552,9 @@ label.field-label{display:block;font-weight:600;margin-bottom:8px;font-size:1rem
 
 @media(max-width:899px){
   /* Mobile: keep the bottom nav, hide sidebar, full width */
-  #app{grid-template-columns:1fr;width:100%;max-width:none}
-  .side-nav{display:none}
+  #app{grid-template-columns:0fr 1fr;width:100%;max-width:none}
+  #app:not(.no-sidebar){grid-template-columns:1fr}
+  .side-nav{display:none !important}
   .bottom-nav{display:grid}
   .pc-only{display:none !important}
   .screen{padding:20px 18px 110px}

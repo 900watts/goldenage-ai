@@ -433,6 +433,51 @@ label.field-label{display:block;font-weight:600;margin-bottom:8px;font-size:1rem
   .home-left{position:sticky;top:96px}
 }
 
+/* === TODAY SUMMARY === */
+.today-summary{
+  background:var(--card-app);
+  border:1px solid var(--border-app);
+  border-radius:18px;
+  padding:18px;
+  margin-bottom:16px;
+}
+.today-summary h3{font-size:1.05rem;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.today-summary h3 svg{width:20px;height:20px;color:var(--primary)}
+.summary-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--border-app)}
+.summary-row:first-of-type{border-top:none}
+.summary-icon{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#fff}
+.summary-icon svg{width:20px;height:20px}
+.summary-text{flex:1;min-width:0}
+.summary-label{font-size:.85rem;color:var(--muted-app)}
+.summary-value{font-weight:600;font-size:1rem}
+.summary-value .up{color:var(--danger)} .summary-value .down{color:var(--safe)}
+
+/* === FEATURE GRID === */
+.feature-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+@media(min-width:600px){.feature-grid{grid-template-columns:repeat(3,1fr)}}
+@media(min-width:900px){.feature-grid{grid-template-columns:repeat(3,1fr);gap:18px}}
+.feature-tile{
+  background:var(--card-app);
+  border:1px solid var(--border-app);
+  border-radius:20px;
+  padding:24px 16px;
+  display:flex;flex-direction:column;align-items:center;gap:12px;
+  cursor:pointer;border:none;font-family:inherit;
+  min-height:140px;
+  transition:all .2s;
+  text-align:center;
+}
+.feature-tile:hover{box-shadow:var(--shadow);transform:translateY(-2px);border-color:var(--primary)}
+.feature-tile:active{transform:scale(0.98)}
+.feature-tile .tile-icon{
+  width:64px;height:64px;border-radius:18px;
+  display:flex;align-items:center;justify-content:center;
+  color:#fff;flex-shrink:0;
+}
+.feature-tile .tile-icon svg{width:32px;height:32px}
+.feature-tile .tile-title{font-family:'Lexend',inherit;font-weight:700;font-size:1.05rem;color:var(--text-app)}
+.feature-tile .tile-sub{font-size:.85rem;color:var(--muted-app);line-height:1.4}
+
 /* === BANNER === */
 .banner{
   display:flex;align-items:center;gap:10px;
@@ -509,25 +554,13 @@ label.field-label{display:block;font-weight:600;margin-bottom:8px;font-size:1rem
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l9-9 9 9M5 10v10h14V10"/></svg>
       <span data-i18n="navHome">首页</span>
     </button>
-    <button class="nav-item" data-route="medication">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.5 20.5l3-3M14.5 3.5l6 6-11 11H3.5v-6l11-11z"/></svg>
-      <span data-i18n="medTitle">用药管理</span>
-    </button>
-    <button class="nav-item" data-route="news">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
-      <span data-i18n="homeNews">每日新闻</span>
+    <button class="nav-item" data-route="features">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <span data-i18n="navFeatures">功能</span>
     </button>
     <button class="nav-item" data-route="map">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
       <span data-i18n="navMap">地图</span>
-    </button>
-    <button class="nav-item" data-route="finance">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
-      <span data-i18n="navFinance">理财</span>
-    </button>
-    <button class="nav-item" data-route="scam">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L3 7v6c0 5 3 7 9 10 6-3 9-5 9-10V7l-9-5z"/><path d="M12 8v4M12 16h.01"/></svg>
-      <span data-i18n="scamTitle">防诈骗</span>
     </button>
 
     <div class="nav-section" data-i18n="navSectionFamily">家庭</div>
@@ -570,9 +603,9 @@ label.field-label{display:block;font-weight:600;margin-bottom:8px;font-size:1rem
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l9-9 9 9M5 10v10h14V10"/></svg>
         <span data-i18n="navHome">首页</span>
       </button>
-      <button class="nav-item" data-route="medication">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.5 20.5l3-3M14.5 3.5l6 6-11 11H3.5v-6l11-11z"/></svg>
-        <span data-i18n="medTitle">用药</span>
+      <button class="nav-item" data-route="features">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        <span data-i18n="navFeatures">功能</span>
       </button>
       <button class="nav-item" data-route="map">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>

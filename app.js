@@ -65,6 +65,8 @@ const I18N = {
     aiReply4: '正在为您播报今日新闻摘要…',
     aiReplySos: '已通知守护者。您的位置已通过短信发送。',
     navSectionMain: '主要功能', navSectionFamily: '家庭', vol: '朗读',
+    navFeatures: '功能', featuresTitle: '全部功能', featuresSub: '选择您需要的功能',
+    todaySummary: '今日概览', nextMed: '下次用药', newsCount: '今日新闻', goldSnapshot: '金价快览',
   },
   en: {
     appTitle: 'GoldenAge AI',
@@ -108,6 +110,8 @@ const I18N = {
     aiReply4: 'Reading today\'s news digest for you…',
     aiReplySos: 'Your guardian has been notified. Your location was sent by SMS.',
     navSectionMain: 'Main', navSectionFamily: 'Family', vol: 'Read',
+    navFeatures: 'Features', featuresTitle: 'All Features', featuresSub: 'Choose what you need',
+    todaySummary: 'Today', nextMed: 'Next medication', newsCount: 'News today', goldSnapshot: 'Gold snapshot',
   },
 };
 
@@ -439,6 +443,7 @@ function render() {
   document.getElementById('bubbleFab').style.display = 'flex';
   switch (state.route) {
     case 'home': return renderHome(screen);
+    case 'features': return renderFeatures(screen);
     case 'map': return renderMap(screen);
     case 'finance': return renderFinance(screen);
     case 'me': return renderMe(screen);
@@ -507,92 +512,92 @@ function renderAuth(root) {
 function renderHome(root) {
   const h = new Date().getHours();
   const greet = h < 12 ? t('greetingMorning') : h < 18 ? t('greetingAfternoon') : t('greetingEvening');
-  const isPC = window.matchMedia('(min-width: 900px)').matches;
   root.innerHTML = `
-    <div class="home-grid">
-      <div class="home-left">
-        <div class="greeting">${greet}，</div>
-        <div class="name">${t('meName')}</div>
+    <div class="greeting">${greet}，</div>
+    <div class="name">${t('meName')}</div>
 
-        <button class="sos-btn" id="sosBtn">
-          ${ICON.sos}
-          <span>${t('sos')}</span>
-        </button>
+    <button class="sos-btn" id="sosBtn">
+      ${ICON.sos}
+      <span>${t('sos')}</span>
+    </button>
 
-        <div class="banner">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
-          <span>${t('bigTextOn')} · ${state.lang==='zh'?'点击右下角气泡呼叫小金':'Tap the bubble to talk to Xiao Jin'}</span>
-        </div>
-
-        <div class="card-label" style="background:var(--card-app);border:1px solid var(--border-app);border-radius:18px;padding:18px;margin-bottom:14px;cursor:pointer;display:flex;align-items:center;gap:14px" id="aiEntry">
-          <div class="card-icon" style="background:linear-gradient(135deg,var(--cta),var(--cta-dark))">${ICON.ai}</div>
-          <div class="card-text">
-            <div class="card-title">${t('homeAskAi')}</div>
-            <div class="card-sub">${state.lang==='zh'?'语音或文字，支持工具调用':'Voice or text, with tool-calling'}</div>
-          </div>
-          <div style="margin-left:auto;color:var(--muted-app)">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
-          </div>
+    <div class="today-summary">
+      <h3>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        ${t('todaySummary')}
+      </h3>
+      <div class="summary-row" data-go="medication" style="cursor:pointer">
+        <div class="summary-icon" style="background:linear-gradient(135deg,var(--gold),#D97706)">${ICON.pill}</div>
+        <div class="summary-text">
+          <div class="summary-label">${t('nextMed')}</div>
+          <div class="summary-value">${t('medTake1')} · 14:00</div>
         </div>
       </div>
-
-      <div class="home-right">
-        <h3 style="margin-bottom:12px;font-size:1.1rem">${t('homeMed')} · ${t('homeNews')} · ${t('homeGold')}</h3>
-        <div class="pc-grid-2">
-          <button class="card-label card" data-go="medication">
-            <div class="card-icon" style="background:linear-gradient(135deg,var(--gold),#D97706)">${ICON.pill}</div>
-            <div class="card-text">
-              <div class="card-title">${t('homeMed')}</div>
-              <div class="card-sub">${t('homeMedSub')}</div>
-            </div>
-          </button>
-
-          <button class="card-label card" data-go="news">
-            <div class="card-icon" style="background:linear-gradient(135deg,var(--cta),var(--cta-dark))">${ICON.news}</div>
-            <div class="card-text">
-              <div class="card-title">${t('homeNews')}</div>
-              <div class="card-sub">${t('homeNewsSub')}</div>
-            </div>
-          </button>
-
-          <button class="card-label card" data-go="map">
-            <div class="card-icon" style="background:linear-gradient(135deg,var(--primary),var(--primary-dark))">${ICON.hosp}</div>
-            <div class="card-text">
-              <div class="card-title">${t('navMap')}</div>
-              <div class="card-sub">${state.lang==='zh'?'附近医院、药店、公园':'Hospitals, pharmacies, parks'}</div>
-            </div>
-          </button>
-
-          <button class="card-label card" data-go="finance">
-            <div class="card-icon" style="background:linear-gradient(135deg,var(--primary),var(--primary-dark))">${ICON.gold}</div>
-            <div class="card-text">
-              <div class="card-title">${t('homeGold')}</div>
-              <div class="card-sub">${t('homeGoldSub')}</div>
-            </div>
-          </button>
-
-          <button class="card-label card" data-go="scam">
-            <div class="card-icon" style="background:linear-gradient(135deg,#EF4444,var(--danger))">${ICON.shield}</div>
-            <div class="card-text">
-              <div class="card-title">${t('homeScam')}</div>
-              <div class="card-sub">${t('homeScamSub')}</div>
-            </div>
-          </button>
-
-          <button class="card-label card" data-go="guardian">
-            <div class="card-icon" style="background:linear-gradient(135deg,#8B5CF6,#6D28D9)">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
-            </div>
-            <div class="card-text">
-              <div class="card-title">${t('guardTitle')}</div>
-              <div class="card-sub">${t('guardSub')}</div>
-            </div>
-          </button>
+      <div class="summary-row" data-go="finance" style="cursor:pointer">
+        <div class="summary-icon" style="background:linear-gradient(135deg,var(--primary),var(--primary-dark))">${ICON.gold}</div>
+        <div class="summary-text">
+          <div class="summary-label">${t('goldSnapshot')}</div>
+          <div class="summary-value">¥678.5/g <span class="up">↑ +0.8%</span></div>
         </div>
       </div>
+      <div class="summary-row" data-go="news" style="cursor:pointer">
+        <div class="summary-icon" style="background:linear-gradient(135deg,var(--cta),var(--cta-dark))">${ICON.news}</div>
+        <div class="summary-text">
+          <div class="summary-label">${t('newsCount')}</div>
+          <div class="summary-value">${state.lang==='zh'?'3 篇 AI 精选':'3 AI-curated'}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-label" style="background:var(--card-app);border:1px solid var(--border-app);border-radius:18px;padding:18px;margin-bottom:14px;cursor:pointer;display:flex;align-items:center;gap:14px" id="aiEntry">
+      <div class="card-icon" style="background:linear-gradient(135deg,var(--cta),var(--cta-dark))">${ICON.ai}</div>
+      <div class="card-text">
+        <div class="card-title">${t('homeAskAi')}</div>
+        <div class="card-sub">${state.lang==='zh'?'语音或文字，支持工具调用':'Voice or text, with tool-calling'}</div>
+      </div>
+      <div style="margin-left:auto;color:var(--muted-app)">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+      </div>
+    </div>
+
+    <div class="banner">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+      <span>${state.lang==='zh'?'更多功能请点击底部「功能」按钮':'Tap "Features" in the nav for more'}</span>
     </div>`;
   document.getElementById('sosBtn').onclick = triggerSos;
   document.getElementById('aiEntry').onclick = openSheet;
+  root.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
+}
+
+// --- FEATURES HUB ---
+function renderFeatures(root) {
+  const tiles = [
+    { route: 'medication', icon: ICON.pill,   grad: 'linear-gradient(135deg,var(--gold),#D97706)',
+      title: () => t('medTitle'), sub: () => t('medTake1Sub') },
+    { route: 'news',       icon: ICON.news,   grad: 'linear-gradient(135deg,var(--cta),var(--cta-dark))',
+      title: () => t('homeNews'), sub: () => t('homeNewsSub') },
+    { route: 'finance',    icon: ICON.gold,   grad: 'linear-gradient(135deg,var(--primary),var(--primary-dark))',
+      title: () => t('finTitle'), sub: () => t('homeGoldSub') },
+    { route: 'map',        icon: ICON.hosp,   grad: 'linear-gradient(135deg,var(--primary),var(--primary-dark))',
+      title: () => t('mapTitle'), sub: () => state.lang==='zh' ? '附近医院、药店、公园' : 'Hospitals, pharmacies, parks' },
+    { route: 'scam',       icon: ICON.shield, grad: 'linear-gradient(135deg,#EF4444,var(--danger))',
+      title: () => t('scamTitle'), sub: () => t('scamSub') },
+    { route: 'guardian',   icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>',
+      grad: 'linear-gradient(135deg,#8B5CF6,#6D28D9)',
+      title: () => t('guardTitle'), sub: () => t('guardSub') },
+  ];
+  root.innerHTML = `
+    <h2 class="section-title">${t('featuresTitle')}</h2>
+    <p class="text-soft" style="margin-bottom:20px">${t('featuresSub')}</p>
+    <div class="feature-grid">
+      ${tiles.map(tile => `
+        <button class="feature-tile" data-go="${tile.route}">
+          <div class="tile-icon" style="background:${tile.grad}">${tile.icon}</div>
+          <div class="tile-title">${tile.title()}</div>
+          <div class="tile-sub">${tile.sub()}</div>
+        </button>
+      `).join('')}
+    </div>`;
   root.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
 }
 

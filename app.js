@@ -56,6 +56,11 @@ const I18N = {
     authPhoneLabel: '手机号',
     authPlaceholder: '+86 138 0000 0000', authSend: '发送验证码',
     authOtpTitle: '请输入验证码', authOtpSub: '验证码已发送至 ', authVerify: '验证', authResend: '重新发送',
+    authResendIn: '重新发送验证码（',
+    authOtpSubPhone: '验证码已发送至您的手机',
+    emailOtpSub: '验证码已发送至您的邮箱',
+    authSmsHint: '将通过邮件发送验证码（推荐）',
+    authPhoneHint: '将通过短信发送验证码',
     aiBubbleLabel: '智能助手', aiBubbleOnline: '已就绪',
     aiBubbleSend: '发送', aiBubbleInputHint: '说一说，或输入文字…',
     aiGreeting: '您好，我是您的智能伴侣小金。有什么可以帮您的吗？',
@@ -102,6 +107,11 @@ const I18N = {
     authPhoneLabel: 'Phone number',
     authPlaceholder: '+1 555 000 0000', authSend: 'Send Code',
     authOtpTitle: 'Enter the code', authOtpSub: 'Code sent to ', authVerify: 'Verify', authResend: 'Resend',
+    authResendIn: 'Resend code (',
+    authOtpSubPhone: 'Code sent to your phone',
+    emailOtpSub: 'Code sent to your email',
+    authSmsHint: 'We will email you a code (recommended)',
+    authPhoneHint: 'A code will be sent via SMS',
     aiBubbleLabel: 'Companion', aiBubbleOnline: 'Online',
     aiBubbleSend: 'Send', aiBubbleInputHint: 'Speak, or type here…',
     aiGreeting: "Hello, I'm Xiao Jin, your AI companion. How can I help?",
@@ -525,15 +535,22 @@ function render() {
 // --- AUTH ---
 function renderAuth(root) {
   const otpMode = renderAuth._otpMode || false;
+  const tab = renderAuth._tab || 'phone';
   root.innerHTML = `
-    <div style="display:flex;flex-direction:column;align-items:center;padding:40px 8px;text-align:center">
+    <div style="display:flex;flex-direction:column;align-items:center;padding:40px 8px;text-align:center;width:100%;max-width:420px">
       <div style="width:96px;height:96px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--cta));display:flex;align-items:center;justify-content:center;margin-bottom:24px">
         <svg width="48" height="48" viewBox="0 0 24 24" fill="white"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
       </div>
       <h2 style="margin-bottom:8px">${t('authTitle')}</h2>
-      <p class="text-soft" style="margin-bottom:32px">${t('authSubtitle')}</p>
-      ${otpMode ? `
-        <div style="width:100%;max-width:360px">
+      <p class="text-soft" style="margin-bottom:20px">${t('authSubtitle')}</p>
+
+      <div style="display:inline-flex;background:var(--bg);border:1px solid var(--border-app);border-radius:12px;padding:4px;margin-bottom:20px">
+        <button id="tabPhone" class="big-btn ${tab==='phone'?'primary':'ghost'}" style="width:auto;min-width:0;padding:10px 18px;font-size:.95rem;min-height:40px">${state.lang==='zh'?'手机':'Phone'}</button>
+        <button id="tabEmail" class="big-btn ${tab==='email'?'primary':'ghost'}" style="width:auto;min-width:0;padding:10px 18px;font-size:.95rem;min-height:40px">${state.lang==='zh'?'邮箱':'Email'}</button>
+      </div>
+
+      ${otpMode ? (tab === 'phone' ? `
+        <div style="width:100%">
           <p class="text-soft" style="margin-bottom:16px">${t('authOtpSub')}</p>
           <label class="field-label">${t('authOtpTitle')}</label>
           <input id="otpInput" inputmode="numeric" maxlength="6" style="letter-spacing:8px;font-size:1.5rem;font-weight:700;text-align:center" placeholder="······">
@@ -543,23 +560,58 @@ function renderAuth(root) {
           <div class="text-soft" id="resendWrap" style="font-size:.95rem">${t('authResendIn')} <span id="resendSec">60</span>s</div>
         </div>
       ` : `
-        <div style="width:100%;max-width:360px">
+        <div style="width:100%">
+          <p class="text-soft" style="margin-bottom:16px">${t('emailOtpSub')}</p>
+          <label class="field-label">${t('authOtpTitle')}</label>
+          <input id="otpInput" inputmode="numeric" maxlength="8" style="letter-spacing:6px;font-size:1.5rem;font-weight:700;text-align:center" placeholder="······">
+          <div style="height:16px"></div>
+          <button class="big-btn primary" id="verifyBtn">${t('authVerify')}</button>
+          <div style="height:12px"></div>
+          <div class="text-soft" id="resendWrap" style="font-size:.95rem">${t('authResendIn')} <span id="resendSec">60</span>s</div>
+        </div>
+      `) : (tab === 'phone' ? `
+        <div style="width:100%">
           <label class="field-label">${t('authPhoneLabel')}</label>
           <input id="phoneInput" maxlength="20" style="font-size:1.3rem" placeholder="${t('authPlaceholder')}">
-          <p class="text-soft" style="margin-top:6px;font-size:.85rem">${state.lang==='zh'?'将通过短信发送验证码':'A verification code will be sent via SMS'}</p>
+          <p class="text-soft" style="margin-top:6px;font-size:.85rem">${t('authPhoneHint')}</p>
           <div style="height:16px"></div>
           <button class="big-btn primary" id="sendBtn">${t('authSend')}</button>
         </div>
-      `}
+      ` : `
+        <div style="width:100%">
+          <label class="field-label">${state.lang==='zh'?'邮箱地址':'Email address'}</label>
+          <input id="emailInput" type="email" autocomplete="email" style="font-size:1.3rem" placeholder="you@example.com">
+          <p class="text-soft" style="margin-top:6px;font-size:.85rem">${t('authSmsHint')}</p>
+          <div style="height:16px"></div>
+          <button class="big-btn primary" id="sendEmailBtn">${t('authSend')}</button>
+          <div style="height:20px"></div>
+          <div style="display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--border-app);border-radius:12px;padding:12px;text-align:left">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+            <span style="font-size:.85rem">${state.lang==='zh'?'推荐使用邮箱登录（无需配置短信服务商）':'Email login works out of the box — no SMS provider needed'}</span>
+          </div>
+        </div>
+      `)}
     </div>`;
+
+  // Tab switching
+  const tabPhone = document.getElementById('tabPhone');
+  const tabEmail = document.getElementById('tabEmail');
+  if (tabPhone) tabPhone.onclick = () => { renderAuth._tab = 'phone'; renderAuth._otpMode = false; render(); };
+  if (tabEmail) tabEmail.onclick = () => { renderAuth._tab = 'email'; renderAuth._otpMode = false; render(); };
+
   if (otpMode) {
     document.getElementById('verifyBtn').onclick = async () => {
       const v = document.getElementById('otpInput').value.trim();
-      if (v.length !== 6) return toast(state.lang==='zh'?'请输入 6 位验证码':'Enter the 6-digit code', true);
-      // Try Supabase OTP verify
+      if (v.length < 6) return toast(state.lang==='zh'?'请输入验证码':'Enter the code', true);
+      // Try Supabase OTP verify (email or phone)
       if (sb) {
         try {
-          const { data, error } = await sb.auth.verifyOtp({ phone: renderAuth._phone, token: v, type: 'sms' });
+          let data, error;
+          if (renderAuth._tab === 'email') {
+            ({ data, error } = await sb.auth.verifyOtp({ email: renderAuth._email, token: v, type: 'email' }));
+          } else {
+            ({ data, error } = await sb.auth.verifyOtp({ phone: renderAuth._phone, token: v, type: 'sms' }));
+          }
           if (error) throw error;
           sbUser = data.user;
           state.signedIn = true;
@@ -580,30 +632,51 @@ function renderAuth(root) {
       }
     };
   } else {
-    document.getElementById('sendBtn').onclick = async () => {
+    // Phone tab
+    const sendBtn = document.getElementById('sendBtn');
+    const sendEmailBtn = document.getElementById('sendEmailBtn');
+
+    if (sendBtn) sendBtn.onclick = async () => {
       const v = document.getElementById('phoneInput').value.trim();
       if (v.length < 6) return toast(state.lang==='zh'?'请输入手机号':'Enter your phone', true);
       renderAuth._phone = v;
-      // Try Supabase OTP
       if (sb) {
         try {
           const { error } = await sb.auth.signInWithOtp({ phone: v, shouldCreateUser: true });
           if (error) throw error;
           renderAuth._otpMode = true;
           render();
-          startResendTimer();
+          startResendTimer('phone');
         } catch(e) {
-          // Supabase phone auth may not be configured — fall back to mock
-          toast(state.lang==='zh'?'SMS未配置，使用离线模式':'SMS not configured, using offline mode', true);
-          renderAuth._otpMode = true;
-          render();
-          startResendTimer();
+          toast((state.lang==='zh'?'短信服务暂不可用：请切换到「邮箱」登录，或使用测试模式':'SMS unavailable — please switch to Email login, or set sms_autoconfirm=true in Supabase') + '\n(' + (e.message||e) + ')', true);
         }
       } else {
-        // No Supabase — mock mode
         renderAuth._otpMode = true;
         render();
-        startResendTimer();
+      }
+    };
+
+    if (sendEmailBtn) sendEmailBtn.onclick = async () => {
+      const v = document.getElementById('emailInput').value.trim();
+      if (!/^[^@]+@[^@]+\.[^@]+$/.test(v)) return toast(state.lang==='zh'?'请输入有效的邮箱地址':'Enter a valid email', true);
+      renderAuth._email = v;
+      if (sb) {
+        try {
+          // Supabase email OTP — signInWithOtp with email option
+          const { error } = await sb.auth.signInWithOtp({
+            email: v,
+            options: { shouldCreateUser: true }
+          });
+          if (error) throw error;
+          renderAuth._otpMode = true;
+          render();
+          startResendTimer('email');
+        } catch(e) {
+          toast((state.lang==='zh'?'发送失败：':'Failed: ') + (e.message||e), true);
+        }
+      } else {
+        renderAuth._otpMode = true;
+        render();
       }
     };
   }
@@ -611,7 +684,7 @@ function renderAuth(root) {
 
 // 60-second resend cooldown
 let _resendTimer;
-function startResendTimer() {
+function startResendTimer(kind) {
   const wrap = document.getElementById('resendWrap');
   if (!wrap) return;
   let sec = 60;
@@ -631,11 +704,16 @@ function startResendTimer() {
       wrap.style.cursor = 'pointer';
       wrap.onclick = async () => {
         if (sb) {
-          try { await sb.auth.signInWithOtp({ phone: renderAuth._phone, shouldCreateUser: true }); }
-          catch(_) {}
+          try {
+            if (kind === 'email') {
+              await sb.auth.signInWithOtp({ email: renderAuth._email, options: { shouldCreateUser: true } });
+            } else {
+              await sb.auth.signInWithOtp({ phone: renderAuth._phone, shouldCreateUser: true });
+            }
+          } catch(_) {}
         }
         toast(state.lang==='zh'?'验证码已重新发送':'Code resent');
-        startResendTimer();
+        startResendTimer(kind);
       };
     }
   }, 1000);

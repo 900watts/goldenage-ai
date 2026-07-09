@@ -525,7 +525,6 @@ function render() {
 // --- AUTH ---
 function renderAuth(root) {
   const otpMode = renderAuth._otpMode || false;
-  const phone = renderAuth._phone || '';
   root.innerHTML = `
     <div style="display:flex;flex-direction:column;align-items:center;padding:40px 8px;text-align:center">
       <div style="width:96px;height:96px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--cta));display:flex;align-items:center;justify-content:center;margin-bottom:24px">
@@ -535,18 +534,19 @@ function renderAuth(root) {
       <p class="text-soft" style="margin-bottom:32px">${t('authSubtitle')}</p>
       ${otpMode ? `
         <div style="width:100%;max-width:360px">
-          <p class="text-soft" style="margin-bottom:16px">${t('authOtpSub')}${escapeHtml(phone)}</p>
+          <p class="text-soft" style="margin-bottom:16px">${t('authOtpSub')}</p>
           <label class="field-label">${t('authOtpTitle')}</label>
           <input id="otpInput" inputmode="numeric" maxlength="6" style="letter-spacing:8px;font-size:1.5rem;font-weight:700;text-align:center" placeholder="······">
           <div style="height:16px"></div>
           <button class="big-btn primary" id="verifyBtn">${t('authVerify')}</button>
           <div style="height:12px"></div>
-          <button class="big-btn ghost" id="resendBtn" style="width:auto;min-width:0">${t('authResend')}</button>
+          <div class="text-soft" id="resendWrap" style="font-size:.95rem">${t('authResendIn')} <span id="resendSec">60</span>s</div>
         </div>
       ` : `
         <div style="width:100%;max-width:360px">
           <label class="field-label">${t('authPhoneLabel')}</label>
-          <input id="phoneInput" value="${escapeHtml(phone)}" placeholder="${t('authPlaceholder')}">
+          <input id="phoneInput" maxlength="20" style="font-size:1.3rem" placeholder="${t('authPlaceholder')}">
+          <p class="text-soft" style="margin-top:6px;font-size:.85rem">${state.lang==='zh'?'将通过短信发送验证码':'A verification code will be sent via SMS'}</p>
           <div style="height:16px"></div>
           <button class="big-btn primary" id="sendBtn">${t('authSend')}</button>
         </div>
@@ -579,12 +579,6 @@ function renderAuth(root) {
         applyState();
       }
     };
-    document.getElementById('resendBtn').onclick = async () => {
-      if (sb) {
-        try { await sb.auth.signInWithOtp({ phone: renderAuth._phone }); toast(state.lang==='zh'?'验证码已重新发送':'Code resent'); }
-        catch(e) { toast(state.lang==='zh'?'发送失败':'Failed', true); }
-      } else { toast(state.lang==='zh'?'验证码已重新发送':'Code resent'); }
-    };
   } else {
     document.getElementById('sendBtn').onclick = async () => {
       const v = document.getElementById('phoneInput').value.trim();
@@ -597,19 +591,54 @@ function renderAuth(root) {
           if (error) throw error;
           renderAuth._otpMode = true;
           render();
+          startResendTimer();
         } catch(e) {
           // Supabase phone auth may not be configured — fall back to mock
-          toast((state.lang==='zh'?'SMS未配置，使用离线模式':'SMS not configured, using offline mode'), false);
+          toast(state.lang==='zh'?'SMS未配置，使用离线模式':'SMS not configured, using offline mode', true);
           renderAuth._otpMode = true;
           render();
+          startResendTimer();
         }
       } else {
         // No Supabase — mock mode
         renderAuth._otpMode = true;
         render();
+        startResendTimer();
       }
     };
   }
+}
+
+// 60-second resend cooldown
+let _resendTimer;
+function startResendTimer() {
+  const wrap = document.getElementById('resendWrap');
+  if (!wrap) return;
+  let sec = 60;
+  wrap.innerHTML = (state.lang==='zh'?'重新发送':'Resend') + ' (<span id="resendSec">'+sec+'</span>s)';
+  wrap.onclick = null;
+  wrap.style.opacity = '0.5';
+  wrap.style.cursor = 'default';
+  clearInterval(_resendTimer);
+  _resendTimer = setInterval(() => {
+    sec--;
+    const el = document.getElementById('resendSec');
+    if (el) el.textContent = sec;
+    if (sec <= 0) {
+      clearInterval(_resendTimer);
+      wrap.innerHTML = (state.lang==='zh'?'没有收到？点击重新发送':'Didn\'t get it? Resend');
+      wrap.style.opacity = '1';
+      wrap.style.cursor = 'pointer';
+      wrap.onclick = async () => {
+        if (sb) {
+          try { await sb.auth.signInWithOtp({ phone: renderAuth._phone, shouldCreateUser: true }); }
+          catch(_) {}
+        }
+        toast(state.lang==='zh'?'验证码已重新发送':'Code resent');
+        startResendTimer();
+      };
+    }
+  }, 1000);
 }
 
 // --- HOME ---

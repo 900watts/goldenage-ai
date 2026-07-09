@@ -766,14 +766,14 @@ function renderHome(root) {
           <div class="summary-icon" style="background:linear-gradient(135deg,var(--primary),var(--primary-dark))">${ICON.gold}</div>
           <div class="summary-text">
             <div class="summary-label">${t('goldSnapshot')}</div>
-            <div class="summary-value">¥678.5/g <span class="up">↑ +0.8%</span></div>
+            <div class="summary-value" id="homeGold">…</div>
           </div>
         </div>
         <div class="summary-row" data-go="news" style="cursor:pointer">
           <div class="summary-icon" style="background:linear-gradient(135deg,var(--cta),var(--cta-dark))">${ICON.news}</div>
           <div class="summary-text">
             <div class="summary-label">${t('newsCount')}</div>
-            <div class="summary-value">${state.lang==='zh'?'3 篇 AI 精选':'3 AI-curated'}</div>
+            <div class="summary-value" id="homeNews">…</div>
           </div>
         </div>
       </div>
@@ -792,6 +792,23 @@ function renderHome(root) {
   document.getElementById('sosBtn').onclick = triggerSos;
   document.getElementById('aiEntry').onclick = openSheet;
   root.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
+  // Live fetches for home summary
+  (async () => {
+    try {
+      const quotes = await window.LiveData.fetchQuotes([{id:'GC=F',unit:'USD/oz'}]);
+      const q = quotes[0];
+      const el = document.getElementById('homeGold');
+      if (el && q && q.price != null) {
+        const up = q.change >= 0;
+        el.innerHTML = `¥${(q.price * 7.2).toFixed(0)}/g <span class="${up?'up':'down'}">${up?'↑':'↓'} ${q.pct>=0?'+':''}${q.pct.toFixed(2)}%</span>`;
+      } else if (el) { el.textContent = '—'; }
+    } catch(_) {}
+    try {
+      const news = await window.LiveData.fetchDailyDigest();
+      const el = document.getElementById('homeNews');
+      if (el) el.textContent = `${news.length} ${state.lang==='zh'?'篇实时':' live'}`;
+    } catch(_) { const el = document.getElementById('homeNews'); if (el) el.textContent = '—'; }
+  })();
 }
 
 // --- FEATURES HUB ---
@@ -845,7 +862,7 @@ async function triggerSos(askConfirm = true) {
   }
 }
 
-// --- MAP ---
+// --- MAP --- (live data via OpenStreetMap Nominatim + Overpass API)
 function renderMap(root) {
   const filter = renderMap._filter || 'hospital';
   root.innerHTML = `
@@ -859,87 +876,141 @@ function renderMap(root) {
     <div class="pc-split">
       <div>
         <div class="map-box">
-          <div class="label">${t('mapLocating')}</div>
+          <div class="label" id="mapStatus">${t('mapLocating')}</div>
           <div class="map-pin"></div>
         </div>
       </div>
-      <div class="poi-list">
-      ${POI[filter].map(p => `
-        <div class="card-label card">
-          <div class="card-icon" style="background:linear-gradient(135deg,var(--primary),var(--primary-dark))">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
-          </div>
-          <div class="card-text">
-            <div class="card-title">${p.name[state.lang]}</div>
-            <div class="card-sub">${p.addr[state.lang]} · ${(p.dist/1000).toFixed(1)} km</div>
-          </div>
-        </div>
-      `).join('')}
+      <div class="poi-list" id="poiList">
+        ${[1,2,3].map(() => '<div class="card-label card"><div class="card-icon" style="background:var(--muted-app)"></div><div class="card-text"><div class="card-title">'+t('mapLocating')+'</div></div></div>').join('')}
       </div>
     </div>`;
   root.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { renderMap._filter = b.dataset.f; render(); });
+  // Live fetch
+  (async () => {
+    const list = document.getElementById('poiList');
+    const status = document.getElementById('mapStatus');
+    if (!list) return;
+    if (status) status.textContent = state.lang==='zh'?'正在获取附近数据…':'Fetching nearby…';
+    const items = await window.LiveData.fetchPOIs(renderMap._filter || 'hospital');
+    if (!items || !items.length) {
+      list.innerHTML = '<div class="card" style="text-align:center;color:var(--muted-app);padding:30px">'+ (state.lang==='zh'?'请检查网络后重试':'Check network and retry') +'</div>';
+      if (status) status.textContent = state.lang==='zh'?'暂时无法获取':'Unavailable';
+      return;
+    }
+    if (status) status.textContent = state.lang==='zh' ? items.length+' 个' : items.length+' nearby';
+    list.innerHTML = items.map(p => `
+      <div class="card-label card">
+        <div class="card-icon" style="background:linear-gradient(135deg,var(--primary),var(--primary-dark))">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        </div>
+        <div class="card-text">
+          <div class="card-title">${escapeHtml(p.name[state.lang] || p.name.zh || p.name.en || 'POI')}</div>
+          <div class="card-sub">${escapeHtml(p.addr[state.lang] || p.addr.zh || '')} · ${(p.dist/1000).toFixed(1)} km</div>
+        </div>
+      </div>
+    `).join('');
+  })();
 }
 
-// --- FINANCE ---
+// --- FINANCE --- (live data via Yahoo Finance v8)
 function renderFinance(root) {
   root.innerHTML = `
     <h2 class="section-title">${t('finTitle')}</h2>
-    <p class="text-soft" style="margin-bottom:16px">${state.lang==='zh'?'简单趋势 · 涨红跌绿（中国市场习惯）':'Simple trends · up red, down green (CN convention)'}</p>
-    <div class="auto-grid">
-    ${QUOTES.map(q => {
-      const up = q.change >= 0;
+    <p class="text-soft" style="margin-bottom:16px" id="finStatus">${state.lang==='zh'?'正在获取实时行情…':'Fetching live quotes…'}</p>
+    <div class="auto-grid" id="finGrid">
+      ${window.LiveData.FINANCE_SYMBOLS.map(s => `
+        <div class="card">
+          <div class="quote-row"><span class="dot" style="background:var(--muted-app)"></span><span class="qname">${s.name[state.lang]}</span><span class="qprice">…</span></div>
+        </div>
+      `).join('')}
+    </div>`;
+  (async () => {
+    const grid = document.getElementById('finGrid');
+    const status = document.getElementById('finStatus');
+    if (!grid) return;
+    const quotes = await window.LiveData.fetchQuotes(window.LiveData.FINANCE_SYMBOLS);
+    const live = quotes.some(q => q.price != null);
+    if (!live) {
+      if (status) status.textContent = state.lang==='zh'?'暂时无法获取行情数据':'Live data unavailable right now';
+      grid.innerHTML = '<div class="card" style="grid-column:1/-1;text-align:center;color:var(--muted-app);padding:40px">'+ (state.lang==='zh'?'请检查网络连接后刷新':'Check your network and try again') +'</div>';
+      return;
+    }
+    if (status) {
+      const t2 = new Date().toLocaleTimeString(state.lang==='zh'?'zh-CN':'en-US',{hour:'2-digit',minute:'2-digit'});
+      status.textContent = state.lang==='zh' ? '实时行情 · 更新于 '+t2 : 'Live · updated '+t2;
+    }
+    grid.innerHTML = quotes.map(q => {
+      const up = (q.change||0) >= 0;
+      const ok = q.price != null;
       return `
         <div class="card">
           <div class="quote-row">
-            <span class="dot" style="background:${up?'var(--danger)':'var(--safe)'}"></span>
+            <span class="dot" style="background:${ok?(up?'var(--danger)':'var(--safe)'):'var(--muted-app)'}"></span>
             <span class="qname">${q.name[state.lang]}</span>
-            <span class="qprice ${up?'up':'down'}">${q.price.toFixed(2)}</span>
+            <span class="qprice ${up?'up':'down'}">${ok?q.price.toFixed(2):'—'}</span>
           </div>
           <div class="quote-row" style="padding-top:0">
             <span></span>
-            <span class="qname ${up?'up':'down'}" style="font-weight:600">${up?'+':''}${q.change.toFixed(2)} (${up?'+':''}${q.pct.toFixed(2)}%)</span>
-            <button class="big-btn ghost" data-explain="${q.id}" style="width:auto;min-width:0;font-size:.95rem;padding:10px 16px">${t('finAskAi')}</button>
+            <span class="qname ${up?'up':'down'}" style="font-weight:600">${ok?(up?'+':'')+q.change.toFixed(2)+' ('+(up?'+':'')+q.pct.toFixed(2)+'%)':'—'}</span>
+            <button class="big-btn ghost" data-explain=""${q.id}" data-pct="${q.pct||0}" data-up="${up}" data-name="${q.name[state.lang]}" style="width:auto;min-width:0;font-size:.95rem;padding:10px 16px">${t('finAskAi')}</button>
           </div>
         </div>`;
-    }).join('')}
-    </div>`;
-  root.querySelectorAll('[data-explain]').forEach(b => b.onclick = () => {
-    const id = b.dataset.explain;
-    const q = QUOTES.find(x => x.id === id);
-    const up = q.change >= 0;
-    const text = up
-      ? (state.lang==='zh' ? `${q.name.zh}今天涨了${q.pct.toFixed(2)}%，受全球避险情绪影响。` : `${q.name.en} is up ${q.pct.toFixed(2)}% today, driven by global risk-off sentiment.`)
-      : (state.lang==='zh' ? `${q.name.zh}今天跌了${Math.abs(q.pct).toFixed(2)}%，市场情绪偏谨慎。` : `${q.name.en} is down ${Math.abs(q.pct).toFixed(2)}% today. Market sentiment is cautious.`);
-    toast(text, false);
-    speak(text);
-  });
+    }).join('');
+    grid.querySelectorAll('[data-explain]').forEach(b => b.onclick = () => {
+      const up = b.dataset.up === 'true';
+      const pct = parseFloat(b.dataset.pct);
+      const name = b.dataset.name;
+      const text = up
+        ? (state.lang==='zh' ? name+'今天涨了'+pct.toFixed(2)+'%，受全球避险情绪影响。' : name+' is up '+pct.toFixed(2)+'% today, driven by global risk-off sentiment.')
+        : (state.lang==='zh' ? name+'今天跌了'+Math.abs(pct).toFixed(2)+'%，市场情绪偏谨慎。' : name+' is down '+Math.abs(pct).toFixed(2)+'% today. Market sentiment is cautious.');
+      toast(text, false);
+      speak(text);
+    });
+  })();
 }
 
-// --- NEWS ---
+// --- NEWS --- (live data via RSS aggregator)
 function renderNews(root) {
   root.innerHTML = `
     <h2 class="section-title">${t('homeNews')}</h2>
-    <p class="text-soft" style="margin-bottom:16px">${state.lang==='zh'?'AI 过滤标题党，支持朗读':'AI-filtered, with read-aloud TTS'}</p>
-    <div class="auto-grid">
-    ${NEWS.map((n, i) => `
+    <p class="text-soft" style="margin-bottom:16px" id="newsStatus">${state.lang==='zh'?'正在获取实时新闻…':'Fetching live news…'}</p>
+    <div class="auto-grid" id="newsGrid">
+      ${[1,2,3,4,5].map(() => `<div class="card"><div class="news-title">…</div><div class="news-sum">${state.lang==='zh'?'加载中':'loading'}</div></div>`).join('')}
+    </div>`;
+  (async () => {
+    const grid = document.getElementById('newsGrid');
+    const status = document.getElementById('newsStatus');
+    if (!grid) return;
+    const items = await window.LiveData.fetchDailyDigest();
+    if (!items.length) {
+      if (status) status.textContent = state.lang==='zh'?'暂时无法获取新闻':'News unavailable right now';
+      grid.innerHTML = '<div class="card" style="grid-column:1/-1;text-align:center;color:var(--muted-app);padding:40px">'+ (state.lang==='zh'?'请检查网络连接后刷新':'Check your network and try again') +'</div>';
+      return;
+    }
+    if (status) {
+      const t2 = new Date().toLocaleTimeString(state.lang==='zh'?'zh-CN':'en-US',{hour:'2-digit',minute:'2-digit'});
+      status.textContent = state.lang==='zh' ? '实时新闻 · '+items.length+' 篇 · 更新于 '+t2 : 'Live news · '+items.length+' articles · updated '+t2;
+    }
+    grid.innerHTML = items.map(n => `
       <div class="card">
-        <span class="news-tag">AI</span>
-        <div class="news-title">${n.title[state.lang]}</div>
-        <div class="news-sum">${n.sum[state.lang]}</div>
+        <span class="news-tag">RSS</span>
+        <div class="news-title">${escapeHtml(n.title)}</div>
+        <div class="news-sum">${escapeHtml(n.summary || '')}</div>
         <div class="news-meta">
-          <span class="src">${n.src}</span>
-          <button class="read-btn" data-read="${i}">${ICON.vol}<span>${t('vol').replace(' ','')}</span></button>
+          <span class="src">${escapeHtml(n.src)}</span>
+          <button class="read-btn" data-title="${escapeAttr(n.title)}" data-sum="${escapeAttr(n.summary||'')}">${ICON.vol}<span>${state.lang==='zh'?'朗读':'Read'}</span></button>
         </div>
       </div>
-    `).join('')}
-    </div>`;
-  root.querySelectorAll('[data-read]').forEach(b => b.onclick = () => {
-    const n = NEWS[+b.dataset.read];
-    speak(`${n.title[state.lang]}. ${n.sum[state.lang]}`);
-    b.innerHTML = `${ICON.stop}<span>${state.lang==='zh'?'停止':'Stop'}</span>`;
-    setTimeout(() => { b.innerHTML = `${ICON.vol}<span>${t('vol').replace(' ','')}</span>`; }, 6000);
-  });
+    `).join('');
+    grid.querySelectorAll('[data-title]').forEach(b => b.onclick = () => {
+      speak(b.dataset.title+'. '+b.dataset.sum);
+      const orig = b.innerHTML;
+      b.innerHTML = `${ICON.stop}<span>${state.lang==='zh'?'停止':'Stop'}</span>`;
+      setTimeout(() => { b.innerHTML = orig; }, 6000);
+    });
+  })();
 }
+function escapeAttr(s) { return String(s).replace(/"/g,'&quot;'); }
 
 // --- SCAM ---
 function renderScam(root) {

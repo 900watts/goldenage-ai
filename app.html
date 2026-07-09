@@ -399,6 +399,34 @@ label.field-label{display:block;font-weight:600;margin-bottom:8px;font-size:1rem
 .read-btn{background:none;border:none;color:var(--cta);font-weight:700;cursor:pointer;font-family:inherit;font-size:.85rem;display:flex;align-items:center;gap:4px;padding:4px 8px;flex-shrink:0}
 .read-btn svg{width:16px;height:16px}
 .read-btn:hover{color:var(--cta-dark)}
+
+/* === NEWS: AI ranking, voting, deep-dive === */
+.news-toolbar{display:flex;gap:8px;margin-bottom:16px;overflow-x:auto;padding-bottom:4px}
+.news-toolbar .chip{cursor:pointer;flex-shrink:0}
+.news-ai-badge{position:absolute;top:10px;right:10px;background:linear-gradient(135deg,#8B5CF6,#6D28D9);color:#fff;padding:4px 10px;border-radius:8px;font-size:.7rem;font-weight:700;letter-spacing:.05em;backdrop-filter:blur(4px);box-shadow:0 2px 8px rgba(139,92,246,.3)}
+.news-actions{display:flex;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border-app);align-items:center}
+.vote-btn{display:inline-flex;align-items:center;gap:4px;padding:6px 10px;border-radius:10px;border:1.5px solid var(--border-app);background:transparent;color:var(--muted-app);font-family:inherit;font-weight:600;font-size:.8rem;cursor:pointer;transition:all .15s;min-height:36px}
+.vote-btn:hover{border-color:var(--primary);color:var(--primary)}
+.vote-btn.voted{background:var(--primary);color:#fff;border-color:var(--primary)}
+.vote-btn.down.voted{background:var(--danger);border-color:var(--danger)}
+.vote-btn svg{width:14px;height:14px}
+.vote-btn span{min-width:14px;text-align:center;font-variant-numeric:tabular-nums}
+.deepdive-btn{display:inline-flex;align-items:center;gap:4px;padding:6px 10px;border-radius:10px;border:none;background:linear-gradient(135deg,var(--primary),var(--cta));color:#fff;font-family:inherit;font-weight:600;font-size:.8rem;cursor:pointer;transition:transform .15s;margin-left:auto;min-height:36px}
+.deepdive-btn:hover{transform:scale(1.04)}
+.deepdive-btn svg{width:14px;height:14px}
+
+/* News detail dialog */
+.dialog.news-detail-dialog{max-width:560px;max-height:80vh;overflow-y:auto}
+.news-detail h3{font-size:1.4rem;line-height:1.4;margin-bottom:14px}
+.news-detail-ai{font-size:1rem;line-height:1.6;padding:14px;background:rgba(13,148,136,.08);border-radius:14px;margin-bottom:16px;color:var(--text-app)}
+.news-detail-actions{display:flex;gap:8px;margin-bottom:12px}
+.nd-chat-area{margin-top:14px;padding-top:14px;border-top:1px solid var(--border-app)}
+.nd-bubble{padding:12px 16px;border-radius:16px;margin-bottom:10px;font-size:1rem;line-height:1.5;max-width:90%}
+.nd-bubble.ai{background:var(--bg);border:1px solid var(--border-app);color:var(--text-app)}
+.nd-bubble.user{background:linear-gradient(135deg,var(--primary),var(--cta));color:#fff;margin-left:auto;border-bottom-right-radius:4px}
+.nd-quick-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.nd-quick-row .chip{cursor:pointer}
+
 /* old news (compat) */
 .news-tag{background:var(--primary);color:#fff;padding:2px 8px;border-radius:6px;font-size:.7rem;font-weight:600;display:inline-block;margin-bottom:6px}
 .news-sum{color:var(--text-soft-app);font-size:.95rem;line-height:1.6;margin-bottom:10px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}

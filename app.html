@@ -55,7 +55,7 @@ h1,h2,h3,h4,h5{font-family:'Lexend','Noto Sans SC',sans-serif;line-height:1.2;co
 /* === APP SHELL === */
 #app{
   position:fixed;
-  inset:0;          /* top:0; right:0; bottom:0; left:0; — fills the entire viewport */
+  inset:0;
   width:100vw;
   height:100vh;
   background:var(--bg-app);
@@ -64,14 +64,10 @@ h1,h2,h3,h4,h5{font-family:'Lexend','Noto Sans SC',sans-serif;line-height:1.2;co
   overflow:hidden;
 }
 #app.no-sidebar{
-  grid-template-columns:0fr 1fr;
+  grid-template-columns:1fr;
 }
 #app.no-sidebar .side-nav{
   display:none !important;
-  width:0;
-  padding:0;
-  margin:0;
-  overflow:hidden;
 }
 /* Left sidebar nav (PC layout) */
 .side-nav{

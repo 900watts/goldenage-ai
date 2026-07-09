@@ -117,6 +117,46 @@ const I18N = {
 
 const t = (k) => I18N[state.lang][k] || k;
 
+// ---------------- SUPABASE ----------------
+const SB_URL = 'https://exvlolipycabnqiaptib.supabase.co';
+const SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV4dmxvbGlweWNhYm5xaWFwdGliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM1MzcyMzgsImV4cCI6MjA5OTExMzIzOH0.mJ-zBvLizIEykNdqDN_CqDpSbUl4Vznc1x1L9TaNMgQ';
+let sb = null; // Supabase client
+let sbUser = null; // current user object
+
+function initSupabase() {
+  if (typeof window.supabase === 'undefined') return;
+  try {
+    sb = window.supabase.createClient(SB_URL, SB_ANON, {
+      auth: { persistSession: true, autoRefreshToken: true }
+    });
+    // Check existing session
+    sb.auth.getSession().then(({ data }) => {
+      if (data.session) {
+        sbUser = data.session.user;
+        state.signedIn = true;
+        applyState();
+      }
+    });
+    // Listen for auth changes
+    sb.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        sbUser = session.user;
+        state.signedIn = true;
+        localStorage.setItem('signedIn', 'true');
+        applyState();
+      } else if (event === 'SIGNED_OUT') {
+        sbUser = null;
+        state.signedIn = false;
+        localStorage.removeItem('signedIn');
+        applyState();
+      }
+    });
+  } catch(e) { console.warn('Supabase init failed:', e); }
+}
+
+// Check if Supabase is connected
+function sbReady() { return sb !== null && sbUser !== null; }
+
 // ---------------- STATE ----------------
 const state = {
   lang: localStorage.getItem('lang') || 'zh',
@@ -508,25 +548,61 @@ function renderAuth(root) {
       `}
     </div>`;
   if (otpMode) {
-    document.getElementById('verifyBtn').onclick = () => {
+    document.getElementById('verifyBtn').onclick = async () => {
       const v = document.getElementById('otpInput').value.trim();
       if (v.length !== 6) return toast(state.lang==='zh'?'请输入 6 位验证码':'Enter the 6-digit code', true);
-      state.signedIn = true;
-      renderAuth._otpMode = false;
-      localStorage.setItem('signedIn', 'true');
-      toast(state.lang==='zh' ? '登录成功，欢迎！' : 'Welcome back!');
-      applyState();
+      // Try Supabase OTP verify
+      if (sb) {
+        try {
+          const { data, error } = await sb.auth.verifyOtp({ phone: renderAuth._phone, token: v, type: 'sms' });
+          if (error) throw error;
+          sbUser = data.user;
+          state.signedIn = true;
+          renderAuth._otpMode = false;
+          localStorage.setItem('signedIn', 'true');
+          toast(state.lang==='zh' ? '登录成功，欢迎！' : 'Welcome!');
+          applyState();
+        } catch(e) {
+          toast((state.lang==='zh'?'验证失败：':'Verify failed: ') + (e.message||e), true);
+        }
+      } else {
+        // Mock fallback
+        state.signedIn = true;
+        renderAuth._otpMode = false;
+        localStorage.setItem('signedIn', 'true');
+        toast(state.lang==='zh' ? '登录成功（离线模式）' : 'Signed in (offline mode)');
+        applyState();
+      }
     };
-    document.getElementById('resendBtn').onclick = () => {
-      toast(state.lang==='zh'?'验证码已重新发送':'Code resent');
+    document.getElementById('resendBtn').onclick = async () => {
+      if (sb) {
+        try { await sb.auth.signInWithOtp({ phone: renderAuth._phone }); toast(state.lang==='zh'?'验证码已重新发送':'Code resent'); }
+        catch(e) { toast(state.lang==='zh'?'发送失败':'Failed', true); }
+      } else { toast(state.lang==='zh'?'验证码已重新发送':'Code resent'); }
     };
   } else {
-    document.getElementById('sendBtn').onclick = () => {
+    document.getElementById('sendBtn').onclick = async () => {
       const v = document.getElementById('phoneInput').value.trim();
       if (v.length < 6) return toast(state.lang==='zh'?'请输入手机号':'Enter your phone', true);
       renderAuth._phone = v;
-      renderAuth._otpMode = true;
-      render();
+      // Try Supabase OTP
+      if (sb) {
+        try {
+          const { error } = await sb.auth.signInWithOtp({ phone: v, shouldCreateUser: true });
+          if (error) throw error;
+          renderAuth._otpMode = true;
+          render();
+        } catch(e) {
+          // Supabase phone auth may not be configured — fall back to mock
+          toast((state.lang==='zh'?'SMS未配置，使用离线模式':'SMS not configured, using offline mode'), false);
+          renderAuth._otpMode = true;
+          render();
+        }
+      } else {
+        // No Supabase — mock mode
+        renderAuth._otpMode = true;
+        render();
+      }
     };
   }
 }
@@ -631,8 +707,16 @@ async function triggerSos(askConfirm = true) {
   }
   toast(t('sosCalling'), true);
   speak(t('sosCalling'));
-  // Real app: CrisisService.raise() + Edge Function notify-guardian
-  // Here: simulate the call.
+  // Write crisis event to Supabase
+  if (sbReady()) {
+    try {
+      await sb.from('crisis_events').insert({
+        user_id: sbUser.id,
+        kind: 'sos_button',
+        payload: { source: 'web_app', timestamp: new Date().toISOString() }
+      });
+    } catch(e) { console.warn('Crisis log failed:', e); }
+  }
 }
 
 // --- MAP ---
@@ -753,11 +837,24 @@ function renderScam(root) {
     </div>`;
   document.getElementById('scamInput').oninput = e => { renderScam._text = e.target.value; };
   document.getElementById('scamClear').onclick = () => { renderScam._text=''; renderScam._result=null; render(); };
-  document.getElementById('scamCheck').onclick = () => {
+  document.getElementById('scamCheck').onclick = async () => {
     const v = (renderScam._text||'').trim();
     if (!v) return;
     renderScam._result = analyzeScam(v);
     render();
+    // Save to Supabase
+    if (sbReady()) {
+      try {
+        await sb.from('scam_reports').insert({
+          user_id: sbUser.id,
+          input_text: v,
+          verdict: renderScam._result.verdict,
+          confidence: renderScam._result.confidence,
+          advice: renderScam._result.advice[state.lang],
+          reasoning: renderScam._result.reasons.map(r => r[state.lang]).join('; ')
+        });
+      } catch(e) { console.warn('Scam report save failed:', e); }
+    }
   };
 }
 
@@ -914,17 +1011,39 @@ function renderMedication(root) {
     </div>
     <div style="height:16px"></div>
     <button class="big-btn secondary" id="addMed">${ICON.pill}<span>${t('medAdd')}</span></button>`;
-  root.querySelectorAll('[data-taken]').forEach(b => b.onclick = () => {
+  root.querySelectorAll('[data-taken]').forEach(b => b.onclick = async () => {
     medState[b.dataset.taken] = 'taken';
     saveMedState();
     toast(state.lang==='zh'?'已记录服药，谢谢！':'Logged. Thank you!');
     speak(state.lang==='zh'?'好的，已记录您服药了。':'OK, I have logged your medication.');
+    // Save to Supabase
+    if (sbReady()) {
+      try {
+        await sb.from('medication_logs').insert({
+          user_id: sbUser.id,
+          schedule_id: b.dataset.taken,
+          scheduled_at: new Date().toISOString(),
+          status: 'taken',
+          taken_at: new Date().toISOString()
+        });
+      } catch(e) { console.warn('Med log failed:', e); }
+    }
     render();
   });
-  root.querySelectorAll('[data-skip]').forEach(b => b.onclick = () => {
+  root.querySelectorAll('[data-skip]').forEach(b => b.onclick = async () => {
     medState[b.dataset.skip] = 'skipped';
     saveMedState();
     toast(state.lang==='zh'?'已记录跳过':'Skipped.');
+    if (sbReady()) {
+      try {
+        await sb.from('medication_logs').insert({
+          user_id: sbUser.id,
+          schedule_id: b.dataset.skip,
+          scheduled_at: new Date().toISOString(),
+          status: 'skipped'
+        });
+      } catch(e) { console.warn('Med log failed:', e); }
+    }
     render();
   });
   document.getElementById('addMed').onclick = () => addMedication();
@@ -1012,9 +1131,12 @@ function renderMe(root) {
   document.getElementById('bigToggle').onclick = () => { state.bigText = !state.bigText; applyState(); };
   document.getElementById('darkToggle').onclick = () => { state.dark = !state.dark; applyState(); };
   document.getElementById('langToggle').onclick = () => { state.lang = state.lang === 'zh' ? 'en' : 'zh'; applyState(); };
-  document.getElementById('logoutBtn').onclick = () => {
+  document.getElementById('logoutBtn').onclick = async () => {
+    if (sb) { try { await sb.auth.signOut(); } catch(_) {} }
+    sbUser = null;
     state.signedIn = false;
     state.chat = [];
+    localStorage.removeItem('signedIn');
     applyState();
     toast(state.lang==='zh'?'已退出登录':'Signed out');
   };
@@ -1060,6 +1182,7 @@ function toggleMic() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  initSupabase();
   bindGlobal();
   applyState();
 });

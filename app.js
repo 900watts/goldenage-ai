@@ -513,43 +513,48 @@ function renderHome(root) {
   const h = new Date().getHours();
   const greet = h < 12 ? t('greetingMorning') : h < 18 ? t('greetingAfternoon') : t('greetingEvening');
   root.innerHTML = `
-    <div class="greeting">${greet}，</div>
-    <div class="name">${t('meName')}</div>
-
-    <button class="sos-btn" id="sosBtn">
-      ${ICON.sos}
-      <span>${t('sos')}</span>
-    </button>
-
-    <div class="today-summary">
-      <h3>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-        ${t('todaySummary')}
-      </h3>
-      <div class="summary-row" data-go="medication" style="cursor:pointer">
-        <div class="summary-icon" style="background:linear-gradient(135deg,var(--gold),#D97706)">${ICON.pill}</div>
-        <div class="summary-text">
-          <div class="summary-label">${t('nextMed')}</div>
-          <div class="summary-value">${t('medTake1')} · 14:00</div>
-        </div>
+    <div class="dash">
+      <!-- Left: greeting + SOS -->
+      <div>
+        <div class="greeting">${greet}，</div>
+        <div class="name">${t('meName')}</div>
+        <button class="sos-btn" id="sosBtn">
+          ${ICON.sos}
+          <span>${t('sos')}</span>
+        </button>
       </div>
-      <div class="summary-row" data-go="finance" style="cursor:pointer">
-        <div class="summary-icon" style="background:linear-gradient(135deg,var(--primary),var(--primary-dark))">${ICON.gold}</div>
-        <div class="summary-text">
-          <div class="summary-label">${t('goldSnapshot')}</div>
-          <div class="summary-value">¥678.5/g <span class="up">↑ +0.8%</span></div>
+
+      <!-- Right: today summary -->
+      <div class="today-summary">
+        <h3>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          ${t('todaySummary')}
+        </h3>
+        <div class="summary-row" data-go="medication" style="cursor:pointer">
+          <div class="summary-icon" style="background:linear-gradient(135deg,var(--gold),#D97706)">${ICON.pill}</div>
+          <div class="summary-text">
+            <div class="summary-label">${t('nextMed')}</div>
+            <div class="summary-value">${t('medTake1')} · 14:00</div>
+          </div>
         </div>
-      </div>
-      <div class="summary-row" data-go="news" style="cursor:pointer">
-        <div class="summary-icon" style="background:linear-gradient(135deg,var(--cta),var(--cta-dark))">${ICON.news}</div>
-        <div class="summary-text">
-          <div class="summary-label">${t('newsCount')}</div>
-          <div class="summary-value">${state.lang==='zh'?'3 篇 AI 精选':'3 AI-curated'}</div>
+        <div class="summary-row" data-go="finance" style="cursor:pointer">
+          <div class="summary-icon" style="background:linear-gradient(135deg,var(--primary),var(--primary-dark))">${ICON.gold}</div>
+          <div class="summary-text">
+            <div class="summary-label">${t('goldSnapshot')}</div>
+            <div class="summary-value">¥678.5/g <span class="up">↑ +0.8%</span></div>
+          </div>
+        </div>
+        <div class="summary-row" data-go="news" style="cursor:pointer">
+          <div class="summary-icon" style="background:linear-gradient(135deg,var(--cta),var(--cta-dark))">${ICON.news}</div>
+          <div class="summary-text">
+            <div class="summary-label">${t('newsCount')}</div>
+            <div class="summary-value">${state.lang==='zh'?'3 篇 AI 精选':'3 AI-curated'}</div>
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="card-label" style="background:var(--card-app);border:1px solid var(--border-app);border-radius:18px;padding:18px;margin-bottom:14px;cursor:pointer;display:flex;align-items:center;gap:14px" id="aiEntry">
+    <div class="card-label" style="background:var(--card-app);border:1px solid var(--border-app);border-radius:18px;padding:18px;margin-top:20px;cursor:pointer;display:flex;align-items:center;gap:14px" id="aiEntry">
       <div class="card-icon" style="background:linear-gradient(135deg,var(--cta),var(--cta-dark))">${ICON.ai}</div>
       <div class="card-text">
         <div class="card-title">${t('homeAskAi')}</div>
@@ -558,11 +563,6 @@ function renderHome(root) {
       <div style="margin-left:auto;color:var(--muted-app)">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
       </div>
-    </div>
-
-    <div class="banner">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
-      <span>${state.lang==='zh'?'更多功能请点击底部「功能」按钮':'Tap "Features" in the nav for more'}</span>
     </div>`;
   document.getElementById('sosBtn').onclick = triggerSos;
   document.getElementById('aiEntry').onclick = openSheet;
@@ -623,11 +623,14 @@ function renderMap(root) {
       <button class="chip ${filter==='park'?'active':''}" data-f="park">${ICON.park}${t('mapPark')}</button>
       <button class="chip ${filter==='supermarket'?'active':''}" data-f="supermarket">${ICON.cart}${t('mapSup')}</button>
     </div>
-    <div class="map-box">
-      <div class="label">${t('mapLocating')}</div>
-      <div class="map-pin"></div>
-    </div>
-    <div class="poi-list">
+    <div class="pc-split">
+      <div>
+        <div class="map-box">
+          <div class="label">${t('mapLocating')}</div>
+          <div class="map-pin"></div>
+        </div>
+      </div>
+      <div class="poi-list">
       ${POI[filter].map(p => `
         <div class="card-label card">
           <div class="card-icon" style="background:linear-gradient(135deg,var(--primary),var(--primary-dark))">
@@ -639,6 +642,7 @@ function renderMap(root) {
           </div>
         </div>
       `).join('')}
+      </div>
     </div>`;
   root.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { renderMap._filter = b.dataset.f; render(); });
 }
@@ -648,6 +652,7 @@ function renderFinance(root) {
   root.innerHTML = `
     <h2 class="section-title">${t('finTitle')}</h2>
     <p class="text-soft" style="margin-bottom:16px">${state.lang==='zh'?'简单趋势 · 涨红跌绿（中国市场习惯）':'Simple trends · up red, down green (CN convention)'}</p>
+    <div class="auto-grid">
     ${QUOTES.map(q => {
       const up = q.change >= 0;
       return `
@@ -663,7 +668,8 @@ function renderFinance(root) {
             <button class="big-btn ghost" data-explain="${q.id}" style="width:auto;min-width:0;font-size:.95rem;padding:10px 16px">${t('finAskAi')}</button>
           </div>
         </div>`;
-    }).join('')}`;
+    }).join('')}
+    </div>`;
   root.querySelectorAll('[data-explain]').forEach(b => b.onclick = () => {
     const id = b.dataset.explain;
     const q = QUOTES.find(x => x.id === id);
@@ -681,6 +687,7 @@ function renderNews(root) {
   root.innerHTML = `
     <h2 class="section-title">${t('homeNews')}</h2>
     <p class="text-soft" style="margin-bottom:16px">${state.lang==='zh'?'AI 过滤标题党，支持朗读':'AI-filtered, with read-aloud TTS'}</p>
+    <div class="auto-grid">
     ${NEWS.map((n, i) => `
       <div class="card">
         <span class="news-tag">AI</span>
@@ -691,7 +698,8 @@ function renderNews(root) {
           <button class="read-btn" data-read="${i}">${ICON.vol}<span>${t('vol').replace(' ','')}</span></button>
         </div>
       </div>
-    `).join('')}`;
+    `).join('')}
+    </div>`;
   root.querySelectorAll('[data-read]').forEach(b => b.onclick = () => {
     const n = NEWS[+b.dataset.read];
     speak(`${n.title[state.lang]}. ${n.sum[state.lang]}`);
@@ -707,14 +715,19 @@ function renderScam(root) {
   root.innerHTML = `
     <h2 class="section-title">${t('scamTitle')}</h2>
     <p class="text-soft" style="margin-bottom:16px">${t('scamSub')}</p>
-    <textarea id="scamInput" placeholder="${t('scamInput')}">${escapeHtml(text)}</textarea>
-    <div style="height:12px"></div>
-    <div style="display:grid;grid-template-columns:1fr 2fr;gap:10px">
-      <button class="big-btn ghost" id="scamClear" style="width:auto;min-width:0">${t('scamClear')}</button>
-      <button class="big-btn danger" id="scamCheck">${ICON.shield}<span>${t('scamCheck')}</span></button>
-    </div>
-    <div style="height:24px"></div>
-    ${result ? renderVerdict(result) : ''}`;
+    <div class="pc-split">
+      <div>
+        <textarea id="scamInput" placeholder="${t('scamInput')}">${escapeHtml(text)}</textarea>
+        <div style="height:12px"></div>
+        <div style="display:grid;grid-template-columns:1fr 2fr;gap:10px">
+          <button class="big-btn ghost" id="scamClear" style="width:auto;min-width:0">${t('scamClear')}</button>
+          <button class="big-btn danger" id="scamCheck">${ICON.shield}<span>${t('scamCheck')}</span></button>
+        </div>
+      </div>
+      <div>
+        ${result ? renderVerdict(result) : `<div class="card" style="text-align:center;padding:40px 20px;color:var(--muted-app)">${state.lang==='zh'?'检测结果将显示在此':'Results will appear here'}</div>`}
+      </div>
+    </div>`;
   document.getElementById('scamInput').oninput = e => { renderScam._text = e.target.value; };
   document.getElementById('scamClear').onclick = () => { renderScam._text=''; renderScam._result=null; render(); };
   document.getElementById('scamCheck').onclick = () => {
@@ -802,6 +815,7 @@ function fakeQrSvg(text) {
 function renderMedication(root) {
   root.innerHTML = `
     <h2 class="section-title">${t('medTitle')}</h2>
+    <div class="auto-grid">
     ${MEDS.map(m => `
       <div class="med-card card">
         <div class="row1">
@@ -818,11 +832,12 @@ function renderMedication(root) {
         </div>
       </div>
     `).join('')}
+    </div>
     <div style="height:16px"></div>
     <button class="big-btn secondary" id="addMed">${ICON.pill}<span>${t('medAdd')}</span></button>`;
   root.querySelectorAll('[data-taken]').forEach(b => b.onclick = () => toast(state.lang==='zh'?'已记录服药，谢谢！':'Logged. Thank you!'));
   root.querySelectorAll('[data-skip]').forEach(b => b.onclick = () => toast(state.lang==='zh'?'已记录跳过':'Skipped.'));
-  document.getElementById('addMed').onclick = () => toast(state.lang==='zh'?'添加用药提醒 · Phase 5':'Add reminder · Phase 5'));
+  document.getElementById('addMed').onclick = () => toast(state.lang==='zh'?'添加用药提醒 · Phase 5':'Add reminder · Phase 5');
 }
 
 // --- PROFILE ---

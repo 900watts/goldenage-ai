@@ -53,25 +53,23 @@ h1,h2,h3,h4,h5{font-family:'Lexend','Noto Sans SC',sans-serif;line-height:1.2;co
 /* === APP SHELL === */
 html,body{height:100%}
 body{
-  background:#0F1A1A;
+  background:var(--bg-app);
 }
 #app{
-  max-width:1180px;
   width:100%;
-  margin:0 auto;
+  margin:0;
   min-height:100vh;
   background:var(--bg-app);
   position:relative;
   display:grid;
-  grid-template-columns:280px 1fr;
-  box-shadow:0 0 60px rgba(0,0,0,.4);
+  grid-template-columns:260px 1fr;
 }
 /* Left sidebar nav (PC layout) */
 .side-nav{
   background:var(--primary-dark);
   color:#fff;
-  padding:24px 18px;
-  display:flex;flex-direction:column;gap:6px;
+  padding:20px 14px;
+  display:flex;flex-direction:column;gap:4px;
   position:sticky;top:0;
   align-self:start;
   height:100vh;
@@ -490,31 +488,57 @@ label.field-label{display:block;font-weight:600;margin-bottom:8px;font-size:1rem
 }
 .banner svg{width:20px;height:20px;flex-shrink:0}
 
-/* === RESPONSIVE === */
+/* === RESPONSIVE LAYOUTS === */
+/* Auto-fill grids for PC content */
+.auto-grid{display:grid;grid-template-columns:1fr;gap:14px}
+@media(min-width:600px){.auto-grid{grid-template-columns:repeat(2,1fr)}}
+@media(min-width:1000px){.auto-grid{grid-template-columns:repeat(2,1fr);gap:18px}}
+@media(min-width:1300px){.auto-grid{grid-template-columns:repeat(3,1fr)}}
+
+/* PC split: two panes side by side */
+.pc-split{display:grid;grid-template-columns:1fr;gap:16px}
+@media(min-width:1000px){.pc-split{grid-template-columns:1fr 1fr;align-items:start}}
+
+/* PC dashboard: 3-column hero */
+.dash{display:grid;grid-template-columns:1fr;gap:20px}
+@media(min-width:1000px){.dash{grid-template-columns:1fr 1fr;gap:24px}}
+@media(min-width:1400px){.dash{grid-template-columns:1fr 1fr 1fr}}
+
+/* Feature grid: 2 cols on mobile, 3 on tablet, 4 on wide PC */
+.feature-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+@media(min-width:700px){.feature-grid{grid-template-columns:repeat(3,1fr);gap:18px}}
+@media(min-width:1100px){.feature-grid{grid-template-columns:repeat(4,1fr);gap:20px}}
+
 @media(min-width:900px){
-  /* PC: bubble moves to side panel + dialog */
-  .bubble-fab{bottom:24px;right:24px;width:72px;height:72px}
-  .bubble-fab svg{width:34px;height:34px}
+  /* PC: full width, no dark margins */
+  .bubble-fab{bottom:28px;right:28px;width:64px;height:64px}
+  .bubble-fab svg{width:30px;height:30px}
   .ai-sheet{
-    position:fixed;right:24px;bottom:24px;
-    left:auto;top:auto;max-width:440px;
-    width:440px;height:640px;
+    position:fixed;right:28px;bottom:28px;
+    left:auto;top:auto;max-width:420px;
+    width:420px;height:70vh;
     border-radius:24px;
     transform:translateY(20px) scale(.95);opacity:0;pointer-events:none;
     transition:transform .25s ease,opacity .25s ease;
-    box-shadow:0 12px 48px rgba(0,0,0,.25);
+    box-shadow:0 16px 56px rgba(0,0,0,.22);
   }
   .ai-sheet.open{transform:translateY(0) scale(1);opacity:1;pointer-events:auto}
   .sheet-mask{background:transparent}
-  .sheet-mask.open{background:rgba(0,0,0,.2);pointer-events:none}
-  .toast{left:auto;right:120px;bottom:32px;max-width:420px}
-  .map-box{height:300px}
+  .sheet-mask.open{background:rgba(0,0,0,.15);pointer-events:none}
+  .toast{left:auto;right:100px;bottom:32px;max-width:400px}
+  .map-box{height:340px}
   .verdict-card{padding:28px}
   .pc-only{display:initial !important}
-  /* Wider app on PC */
-  .screen{padding:32px 48px 120px;max-width:none}
-  /* Bigger content area on PC */
+  .screen{padding:28px 36px 60px;max-width:none;overflow-y:auto}
   .dialog-mask{padding:60px}
+  /* Sidebar visible, bottom nav hidden on PC */
+  .side-nav{display:flex}
+  .bottom-nav{display:none}
+  /* Bigger headings on PC */
+  .greeting{font-size:2rem}
+  .name{font-size:2.4rem;margin-bottom:20px}
+  .sos-btn{font-size:1.5rem;min-height:88px}
+  .section-title{font-size:1.6rem}
 }
 
 @media(max-width:899px){

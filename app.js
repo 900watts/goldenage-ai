@@ -253,10 +253,29 @@ const NEWS = [
     src: 'Gov Daily' },
 ];
 
+// Medication state: track which meds have been taken/skipped today
 const MEDS = [
   { id: 'm1', name: () => t('medTake1'), sub: () => t('medTake1Sub') },
   { id: 'm2', name: () => t('medTake2'), sub: () => t('medTake2Sub') },
 ];
+const medState = {}; // { 'm1': 'taken', 'm2': 'skipped' } — persists in localStorage
+function loadMedState() {
+  try { Object.assign(medState, JSON.parse(localStorage.getItem('medState') || '{}')); } catch(_) {}
+}
+function saveMedState() {
+  localStorage.setItem('medState', JSON.stringify(medState));
+}
+loadMedState();
+
+// Custom meds added by user
+const customMeds = [];
+function loadCustomMeds() {
+  try { customMeds.push(...JSON.parse(localStorage.getItem('customMeds') || '[]')); } catch(_) {}
+}
+function saveCustomMeds() {
+  localStorage.setItem('customMeds', JSON.stringify(customMeds));
+}
+loadCustomMeds();
 
 // ---------------- SCAM ENGINE (rule-based) ----------------
 const DANGER_PATTERNS = ['中奖','中大奖','恭喜您','领奖','领取奖品','免费送','零元购','点击链接领取','立即领取','银行卡号','验证码','密码','转账','汇款','安全账户','资金清查','涉嫌洗钱','通缉','高额回报','稳赚不赔','内幕消息','一夜暴富'];
@@ -433,13 +452,17 @@ function go(route) {
 // ---------------- RENDER ----------------
 function render() {
   const screen = document.getElementById('screen');
+  const sideNav = document.getElementById('sideNav');
   if (!state.signedIn) {
     renderAuth(screen);
     document.getElementById('bottomNav').style.display = 'none';
     document.getElementById('bubbleFab').style.display = 'none';
+    if (sideNav) sideNav.style.display = 'none';
     return;
   }
-  document.getElementById('bottomNav').style.display = 'grid';
+  // Show sidebar on PC (>=900px), bottom nav on mobile
+  if (sideNav) sideNav.style.display = '';
+  document.getElementById('bottomNav').style.display = '';
   document.getElementById('bubbleFab').style.display = 'flex';
   switch (state.route) {
     case 'home': return renderHome(screen);
@@ -531,10 +554,10 @@ function renderHome(root) {
           ${t('todaySummary')}
         </h3>
         <div class="summary-row" data-go="medication" style="cursor:pointer">
-          <div class="summary-icon" style="background:linear-gradient(135deg,var(--gold),#D97706)">${ICON.pill}</div>
+          <div class="summary-icon" style="background:linear-gradient(135deg,${medState['m1']==='taken'?'var(--safe)':'var(--gold)'},#D97706)">${medState['m1']==='taken'?ICON.check:ICON.pill}</div>
           <div class="summary-text">
             <div class="summary-label">${t('nextMed')}</div>
-            <div class="summary-value">${t('medTake1')} · 14:00</div>
+            <div class="summary-value">${medState['m1']==='taken'?(state.lang==='zh'?'今日已服药':'Already taken'):t('medTake1')+' · 14:00'}</div>
           </div>
         </div>
         <div class="summary-row" data-go="finance" style="cursor:pointer">
@@ -759,34 +782,77 @@ function renderVerdict(r) {
 }
 
 // --- GUARDIAN ---
+// Guardian state — persisted
+const guardians = [];
+function loadGuardians() {
+  try { guardians.push(...JSON.parse(localStorage.getItem('guardians') || '[]')); } catch(_) {}
+  if (guardians.length === 0) {
+    guardians.push({ name: '王小明 · 儿子', nameEn: 'Xiao Ming · Son', paired: true, token: 'demo-abc123' });
+    saveGuardians();
+  }
+}
+function saveGuardians() { localStorage.setItem('guardians', JSON.stringify(guardians)); }
+loadGuardians();
+
 function renderGuardian(root) {
   const showQr = renderGuardian._qr;
-  const guardians = [{ name: t('guardPairedGuardian'), paired: true }];
   root.innerHTML = `
     <h2 class="section-title">${t('guardTitle')}</h2>
     <p class="text-soft" style="margin-bottom:20px">${t('guardSub')}</p>
-    ${guardians.map(g => `
+    <div class="auto-grid">
+    ${guardians.map((g, i) => `
       <div class="card-label card">
         <div class="card-icon" style="background:linear-gradient(135deg,var(--primary),var(--primary-dark))">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="10" r="3"/><path d="M7 16.5l5-3 5 3"/></svg>
         </div>
         <div class="card-text">
-          <div class="card-title">${g.name}</div>
+          <div class="card-title">${state.lang==='zh' ? g.name : (g.nameEn||g.name)}</div>
           <div class="card-sub" style="color:var(--safe);font-weight:600">● ${t('guardPaired')}</div>
         </div>
+        <button class="big-btn ghost" data-remove="${i}" style="width:auto;min-width:0;font-size:.85rem;padding:8px 12px;color:var(--danger);border-color:var(--danger)">${ICON.close}</button>
       </div>
     `).join('')}
+    </div>
     <div style="height:20px"></div>
     <button class="big-btn secondary" id="qrBtn">${ICON.shield}<span>${t('guardShowQr')}</span></button>
-    ${showQr ? `
+    ${showQr ? (() => {
+      const token = Math.random().toString(36).slice(2, 18);
+      renderGuardian._pendingToken = token;
+      return `
       <div style="margin-top:24px;text-align:center">
         <div class="qr-frame">
-          ${fakeQrSvg('goldenage://pair/demo-token-abc123')}
+          ${fakeQrSvg('goldenage://pair/' + token)}
         </div>
         <p class="text-soft" style="margin-top:8px">${state.lang==='zh'?'让家人用 GoldenAge 扫描':'Have family scan with GoldenAge'}</p>
-      </div>
-    ` : ''}`;
+        <p style="font-size:.8rem;color:var(--muted-app);margin-top:4px">Token: ${token}</p>
+        <div style="height:16px"></div>
+        <button class="big-btn primary" id="simulateScan" style="max-width:280px">${state.lang==='zh'?'模拟家人扫描配对':'Simulate family scan & pair'}</button>
+      </div>`;
+    })() : ''}`;
   document.getElementById('qrBtn').onclick = () => { renderGuardian._qr = true; render(); };
+  root.querySelectorAll('[data-remove]').forEach(b => b.onclick = async () => {
+    const i = +b.dataset.remove;
+    const ok = await showDialog({
+      title: state.lang==='zh'?'移除守护者':'Remove Guardian',
+      body: state.lang==='zh'?`确认移除 ${guardians[i].name}？`:`Remove ${guardians[i].nameEn||guardians[i].name}?`,
+      confirmLabel: state.lang==='zh'?'移除':'Remove',
+      danger: true,
+    });
+    if (ok) { guardians.splice(i, 1); saveGuardians(); render(); }
+  });
+  const simBtn = document.getElementById('simulateScan');
+  if (simBtn) simBtn.onclick = async () => {
+    const name = await promptDialog({
+      title: state.lang==='zh'?'家人姓名':'Family member name',
+      placeholder: state.lang==='zh'?'如：李小华':'e.g. Li Xiaohua',
+    });
+    if (!name) return;
+    guardians.push({ name: name + ' · 家人', nameEn: name + ' · Family', paired: true, token: renderGuardian._pendingToken || 'new' });
+    saveGuardians();
+    renderGuardian._qr = false;
+    toast(state.lang==='zh'?'配对成功！':'Paired!');
+    render();
+  };
 }
 
 function fakeQrSvg(text) {
@@ -813,31 +879,96 @@ function fakeQrSvg(text) {
 
 // --- MEDICATION ---
 function renderMedication(root) {
+  const allMeds = [...MEDS, ...customMeds.map((m, i) => ({
+    id: 'c' + i,
+    name: () => m.name,
+    sub: () => m.time + (m.notes ? ' · ' + m.notes : ''),
+  }))];
   root.innerHTML = `
     <h2 class="section-title">${t('medTitle')}</h2>
     <div class="auto-grid">
-    ${MEDS.map(m => `
-      <div class="med-card card">
+    ${allMeds.map(m => {
+      const st = medState[m.id];
+      const takenCls = st === 'taken' ? 'opacity:.5' : st === 'skipped' ? 'opacity:.4' : '';
+      const statusBadge = st === 'taken'
+        ? `<span style="background:var(--safe);color:#fff;padding:2px 10px;border-radius:8px;font-size:.8rem;font-weight:600">${t('medTaken')}</span>`
+        : st === 'skipped'
+        ? `<span style="background:var(--muted-app);color:#fff;padding:2px 10px;border-radius:8px;font-size:.8rem;font-weight:600">${t('medSkip')}</span>`
+        : '';
+      return `
+      <div class="med-card card" style="${takenCls}">
         <div class="row1">
-          <div class="med-icon">${ICON.pill}</div>
+          <div class="med-icon" style="${st==='taken'?'background:var(--safe)':''}">${st==='taken'?ICON.check:ICON.pill}</div>
           <div class="med-info">
-            <div class="med-name">${m.name()}</div>
+            <div class="med-name">${m.name()} ${statusBadge}</div>
             <div class="med-time">${m.sub()}</div>
           </div>
-          <button class="check" data-taken="${m.id}">${ICON.check}</button>
         </div>
+        ${st ? '' : `
         <div class="actions">
           <button class="big-btn primary" data-taken="${m.id}" style="font-size:1rem;padding:14px 18px">${ICON.check}<span>${t('medTaken')}</span></button>
           <button class="big-btn ghost" data-skip="${m.id}" style="font-size:1rem;padding:14px 18px">${ICON.close}<span>${t('medSkip')}</span></button>
-        </div>
-      </div>
-    `).join('')}
+        </div>`}
+      </div>`;
+    }).join('')}
     </div>
     <div style="height:16px"></div>
     <button class="big-btn secondary" id="addMed">${ICON.pill}<span>${t('medAdd')}</span></button>`;
-  root.querySelectorAll('[data-taken]').forEach(b => b.onclick = () => toast(state.lang==='zh'?'已记录服药，谢谢！':'Logged. Thank you!'));
-  root.querySelectorAll('[data-skip]').forEach(b => b.onclick = () => toast(state.lang==='zh'?'已记录跳过':'Skipped.'));
-  document.getElementById('addMed').onclick = () => toast(state.lang==='zh'?'添加用药提醒 · Phase 5':'Add reminder · Phase 5');
+  root.querySelectorAll('[data-taken]').forEach(b => b.onclick = () => {
+    medState[b.dataset.taken] = 'taken';
+    saveMedState();
+    toast(state.lang==='zh'?'已记录服药，谢谢！':'Logged. Thank you!');
+    speak(state.lang==='zh'?'好的，已记录您服药了。':'OK, I have logged your medication.');
+    render();
+  });
+  root.querySelectorAll('[data-skip]').forEach(b => b.onclick = () => {
+    medState[b.dataset.skip] = 'skipped';
+    saveMedState();
+    toast(state.lang==='zh'?'已记录跳过':'Skipped.');
+    render();
+  });
+  document.getElementById('addMed').onclick = () => addMedication();
+}
+
+async function addMedication() {
+  const name = await promptDialog({
+    title: t('medAdd'),
+    placeholder: state.lang==='zh' ? '药品名称（如：阿司匹林）' : 'Medication name (e.g. Aspirin)',
+  });
+  if (!name) return;
+  const time = await promptDialog({
+    title: state.lang==='zh' ? '服药时间' : 'Schedule time',
+    placeholder: state.lang==='zh' ? '如：08:00, 20:00' : 'e.g. 08:00, 20:00',
+  });
+  const notes = await promptDialog({
+    title: state.lang==='zh' ? '备注' : 'Notes',
+    placeholder: state.lang==='zh' ? '如：饭后服用' : 'e.g. with food',
+  });
+  customMeds.push({ name, time: time || '08:00', notes: notes || '' });
+  saveCustomMeds();
+  toast(state.lang==='zh' ? '已添加用药提醒' : 'Reminder added');
+  render();
+}
+
+// Simple text-input dialog (returns string or null)
+function promptDialog({ title, placeholder }) {
+  return new Promise(res => {
+    const mask = document.getElementById('dialogMask');
+    const dlg = document.getElementById('dialog');
+    dlg.innerHTML = `
+      <h3>${escapeHtml(title)}</h3>
+      <input id="promptInput" placeholder="${escapeHtml(placeholder||'')}" style="margin-bottom:20px">
+      <div class="actions">
+        <button class="big-btn ghost" id="pCancel" style="width:auto;min-width:96px">${state.lang==='zh'?'取消':'Cancel'}</button>
+        <button class="big-btn primary" id="pOk" style="width:auto;min-width:96px">${state.lang==='zh'?'确定':'OK'}</button>
+      </div>`;
+    mask.classList.add('open');
+    const input = document.getElementById('promptInput');
+    setTimeout(() => input.focus(), 100);
+    input.onkeydown = e => { if (e.key === 'Enter') { mask.classList.remove('open'); res(input.value.trim()); } };
+    document.getElementById('pCancel').onclick = () => { mask.classList.remove('open'); res(null); };
+    document.getElementById('pOk').onclick = () => { mask.classList.remove('open'); res(input.value.trim()); };
+  });
 }
 
 // --- PROFILE ---

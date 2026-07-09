@@ -493,15 +493,18 @@ function go(route) {
 function render() {
   const screen = document.getElementById('screen');
   const sideNav = document.getElementById('sideNav');
+  const app = document.getElementById('app');
   if (!state.signedIn) {
     renderAuth(screen);
     document.getElementById('bottomNav').style.display = 'none';
     document.getElementById('bubbleFab').style.display = 'none';
     if (sideNav) sideNav.style.display = 'none';
+    if (app) app.classList.add('no-sidebar');
     return;
   }
   // Show sidebar on PC (>=900px), bottom nav on mobile
   if (sideNav) sideNav.style.display = '';
+  if (app) app.classList.remove('no-sidebar');
   document.getElementById('bottomNav').style.display = '';
   document.getElementById('bubbleFab').style.display = 'flex';
   switch (state.route) {

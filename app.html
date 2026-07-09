@@ -64,6 +64,9 @@ body{
   display:grid;
   grid-template-columns:260px 1fr;
 }
+#app.no-sidebar{
+  grid-template-columns:1fr;
+}
 /* Left sidebar nav (PC layout) */
 .side-nav{
   background:var(--primary-dark);
@@ -542,8 +545,8 @@ label.field-label{display:block;font-weight:600;margin-bottom:8px;font-size:1rem
 }
 
 @media(max-width:899px){
-  /* Mobile: keep the bottom nav, hide sidebar */
-  #app{grid-template-columns:1fr;max-width:520px}
+  /* Mobile: keep the bottom nav, hide sidebar, full width */
+  #app{grid-template-columns:1fr;width:100%;max-width:none}
   .side-nav{display:none}
   .bottom-nav{display:grid}
   .pc-only{display:none !important}

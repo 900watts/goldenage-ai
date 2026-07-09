@@ -73,6 +73,45 @@ async function fetchRss(url) {
   }
 }
 
+// Keyword-based image + topic classification for news cards
+const NEWS_KEYWORDS = [
+  { keys: ['gold','silver','precious','metal','goldapi','期货','黄金','白银'], topic: 'gold',     label: { zh: '金价',         en: 'Gold' } },
+  { keys: ['stock','share','market','index','shanghai','hang seng','nasdaq','s&p','dow','equity','股票','股市','指数','上证','恒生','纳斯达克','标普','道琼'], topic: 'stock',    label: { zh: '股市行情',         en: 'Markets' } },
+  { keys: ['weather','rain','snow','temperature','forecast','storm','climate','天气','雨','雪','气温','台风','风暴'], topic: 'weather',  label: { zh: '天气',         en: 'Weather' } },
+  { keys: ['health','hospital','medicine','medical','covid','flu','disease','doctor','健康','医院','医疗','疾病'], topic: 'health',   label: { zh: '健康',         en: 'Health' } },
+  { keys: ['tech','ai','5g','semiconductor','chip','quantum','互联网','半导体','芯片','量子','人工智能'], topic: 'tech',     label: { zh: '科技',         en: 'Tech' } },
+  { keys: ['education','school','university','student','教育','学校','大学','学生'], topic: 'education', label: { zh: '教育',         en: 'Education' } },
+  { keys: ['food','cuisine','restaurant','美食','饮食','餐厅'], topic: 'food',     label: { zh: '美食',         en: 'Food' } },
+  { keys: ['sport','olympic','football','basketball','体育','奥运','足球','篮球'], topic: 'sport',    label: { zh: '体育',         en: 'Sports' } },
+  { keys: ['culture','festival','art','museum','文学','艺术','文化','节日','博物馆'], topic: 'culture', label: { zh: '文化',         en: 'Culture' } },
+  { keys: ['economy','gdp','trade','export','import','经济','贸易','出口','进口'], topic: 'economy', label: { zh: '财经',         en: 'Economy' } },
+];
+
+function classifyNews(title, desc) {
+  const text = ((title || '') + ' ' + (desc || '')).toLowerCase();
+  for (const k of NEWS_KEYWORDS) {
+    if (k.keys.some(x => text.includes(x.toLowerCase()))) {
+      return k;
+    }
+  }
+  return null;
+}
+
+// AI-style one-line summary extraction. Since we don't have an LLM
+// in the browser, we use a simple extractive method: take the first
+// sentence (or up to 80 chars) of the description.
+function aiSummary(text, lang) {
+  if (!text) return lang === 'zh' ? '（暂无摘要）' : '(no summary)';
+  // Strip HTML, normalize whitespace
+  const t = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  // Pick the first sentence (split on . ! ? for EN; 。 for ZH)
+  const re = lang === 'zh' ? /[^。]+。/ : /[^.!?]+[.!?]/;
+  const m = t.match(re);
+  if (m) return m[0].trim();
+  // Fallback: first 90 chars
+  return t.length > 90 ? t.slice(0, 90) + '…' : t;
+}
+
 async function fetchDailyDigest() {
   // Fetch all sources in parallel, then merge and sort by date
   const lists = await Promise.all(NEWS_SOURCES.map(s => fetchRss(s.url)));
@@ -82,15 +121,27 @@ async function fetchDailyDigest() {
   });
   // Sort newest first
   merged.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
-  // Return top 10
-  return merged.slice(0, 10).map((it, i) => ({
-    id: i,
-    title: it.title,
-    summary: it.desc,
-    src: it.source[state.lang] || it.source.zh,
-    url: it.link,
-    pubDate: it.pubDate,
-  }));
+  // Take top 20, then enrich with classification + AI summary + image
+  const top = merged.slice(0, 20);
+  const lang = state.lang || 'zh';
+  return top.map((it, i) => {
+    const topic = classifyNews(it.title, it.desc);
+    // Seed image by title hash so it's stable across reloads
+    const seed = (it.title || 'news' + i).slice(0, 30) + i;
+    return {
+      id: i,
+      title: it.title,
+      summary: it.desc,
+      aiSummary: aiSummary(it.desc, lang),
+      src: it.source[lang] || it.source.zh,
+      url: it.link,
+      pubDate: it.pubDate,
+      image: imageFor(seed),
+      wikiImage: null,  // lazy-loaded when card becomes visible
+      topic: topic?.topic || 'default',
+      topicLabel: (topic?.label || { zh: '综合', en: 'General' })[lang] || topic?.label?.zh || '综合',
+    };
+  });
 }
 
 // ---------- POI: OpenStreetMap Nominatim (no API key) ----------
@@ -155,11 +206,54 @@ async function fetchWeather(lat = 39.9085, lng = 116.3975) {
   }
 }
 
+// ---------- IMAGE: per-article real photos ----------
+// Picsum (random, no key) — perfect for news cards
+// Each URL is unique and stable for the same seed
+function imageFor(seed) {
+  return `https://picsum.photos/seed/${encodeURIComponent(seed)}/600/360`;
+}
+
+// Wikipedia summary API — gives a real photo for well-known topics
+// Used to find images for news by matching key entities
+const WIKI_KEYWORDS = {
+  economy:    'Economy of China',
+  stock:      'Hong Kong Stock Exchange',
+  gold:       'Gold',
+  silver:     'Silver',
+  weather:    'Climate of China',
+  health:     'Health in China',
+  education:  'Education in China',
+  tech:       'Science and technology in China',
+  transport:  'Transport in China',
+  food:       'Cuisine of China',
+  sport:      'Sport in China',
+  culture:    'Culture of China',
+  default:    'News',
+};
+
+async function wikiImageFor(keyword) {
+  const topic = WIKI_KEYWORDS[keyword] || WIKI_KEYWORDS.default;
+  try {
+    const lang = state.lang === 'zh' ? 'zh' : 'en';
+    const res = await fetch(
+      `https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topic)}`,
+      { headers: { 'User-Agent': _UA } }
+    );
+    if (!res.ok) return null;
+    const d = await res.json();
+    return d.thumbnail?.source || null;
+  } catch (_) {
+    return null;
+  }
+}
+
 // ---------- EXPORT ----------
 window.LiveData = {
   fetchQuotes,
   fetchDailyDigest,
   fetchPOIs,
   fetchWeather,
+  imageFor,
+  wikiImageFor,
   FINANCE_SYMBOLS,
 };

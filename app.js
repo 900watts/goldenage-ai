@@ -71,7 +71,7 @@ const I18N = {
     aiReply4: '正在为您播报今日新闻摘要…',
     aiReplySos: '已通知守护者。您的位置已通过短信发送。',
     navSectionMain: '主要功能', navSectionFamily: '家庭', vol: '朗读',
-    navFeatures: '功能', featuresTitle: '全部功能', featuresSub: '选择您需要的功能',
+    navFeatures: '功能', navReminder: '提醒', navNews: '新闻', featuresTitle: '全部功能', featuresSub: '选择您需要的功能',
     todaySummary: '今日概览', nextMed: '下次用药', newsCount: '今日新闻', goldSnapshot: '金价快览',
   },
   en: {
@@ -122,7 +122,7 @@ const I18N = {
     aiReply4: 'Reading today\'s news digest for you…',
     aiReplySos: 'Your guardian has been notified. Your location was sent by SMS.',
     navSectionMain: 'Main', navSectionFamily: 'Family', vol: 'Read',
-    navFeatures: 'Features', featuresTitle: 'All Features', featuresSub: 'Choose what you need',
+    navFeatures: 'Features', navReminder: 'Reminder', navNews: 'News', featuresTitle: 'All Features', featuresSub: 'Choose what you need',
     todaySummary: 'Today', nextMed: 'Next medication', newsCount: 'News today', goldSnapshot: 'Gold snapshot',
   },
 };
@@ -815,9 +815,9 @@ function renderHome(root) {
 function renderFeatures(root) {
   const tiles = [
     { route: 'medication', icon: ICON.pill,   grad: 'linear-gradient(135deg,var(--gold),#D97706)',
-      title: () => t('medTitle'), sub: () => t('medTake1Sub') },
+      title: () => t('navReminder'), sub: () => state.lang==='zh'?'服药、预约、提醒':'Medications, schedule, reminders' },
     { route: 'news',       icon: ICON.news,   grad: 'linear-gradient(135deg,var(--cta),var(--cta-dark))',
-      title: () => t('homeNews'), sub: () => t('homeNewsSub') },
+      title: () => t('navNews'), sub: () => state.lang==='zh'?'AI 摘要实时新闻':'AI-summarized live news' },
     { route: 'finance',    icon: ICON.gold,   grad: 'linear-gradient(135deg,var(--primary),var(--primary-dark))',
       title: () => t('finTitle'), sub: () => t('homeGoldSub') },
     { route: 'map',        icon: ICON.hosp,   grad: 'linear-gradient(135deg,var(--primary),var(--primary-dark))',
@@ -969,13 +969,13 @@ function renderFinance(root) {
   })();
 }
 
-// --- NEWS --- (live data via RSS aggregator)
+// --- NEWS --- (live data via RSS aggregator with images + AI summary)
 function renderNews(root) {
   root.innerHTML = `
     <h2 class="section-title">${t('homeNews')}</h2>
     <p class="text-soft" style="margin-bottom:16px" id="newsStatus">${state.lang==='zh'?'正在获取实时新闻…':'Fetching live news…'}</p>
-    <div class="auto-grid" id="newsGrid">
-      ${[1,2,3,4,5].map(() => `<div class="card"><div class="news-title">…</div><div class="news-sum">${state.lang==='zh'?'加载中':'loading'}</div></div>`).join('')}
+    <div class="auto-grid news-grid" id="newsGrid">
+      ${[1,2,3,4,5].map(() => `<div class="card news-card"><div class="news-img" style="background:linear-gradient(135deg,var(--primary),var(--cta))"></div><div class="news-title">…</div><div class="news-sum">${state.lang==='zh'?'加载中':'loading'}</div></div>`).join('')}
     </div>`;
   (async () => {
     const grid = document.getElementById('newsGrid');
@@ -992,13 +992,18 @@ function renderNews(root) {
       status.textContent = state.lang==='zh' ? '实时新闻 · '+items.length+' 篇 · 更新于 '+t2 : 'Live news · '+items.length+' articles · updated '+t2;
     }
     grid.innerHTML = items.map(n => `
-      <div class="card">
-        <span class="news-tag">RSS</span>
-        <div class="news-title">${escapeHtml(n.title)}</div>
-        <div class="news-sum">${escapeHtml(n.summary || '')}</div>
-        <div class="news-meta">
-          <span class="src">${escapeHtml(n.src)}</span>
-          <button class="read-btn" data-title="${escapeAttr(n.title)}" data-sum="${escapeAttr(n.summary||'')}">${ICON.vol}<span>${state.lang==='zh'?'朗读':'Read'}</span></button>
+      <div class="card news-card" data-news-id="${n.id}">
+        <div class="news-img-wrap">
+          <img class="news-img" src="${n.image}" alt="" loading="lazy" onerror="this.style.display='none'">
+          <span class="news-topic">${escapeHtml(n.topicLabel)}</span>
+        </div>
+        <div class="news-body">
+          <div class="news-title">${escapeHtml(n.title)}</div>
+          <div class="news-ai">${state.lang==='zh'?'<span class="ai-tag">AI</span> ':'<span class="ai-tag">AI</span> '}${escapeHtml(n.aiSummary || n.summary || '')}</div>
+          <div class="news-meta">
+            <span class="src">${escapeHtml(n.src)} · ${escapeHtml(timeAgo(n.pubDate))}</span>
+            <button class="read-btn" data-title="${escapeAttr(n.title)}" data-sum="${escapeAttr(n.aiSummary||n.summary||'')}">${ICON.vol}<span>${state.lang==='zh'?'朗读':'Read'}</span></button>
+          </div>
         </div>
       </div>
     `).join('');
@@ -1011,6 +1016,17 @@ function renderNews(root) {
   })();
 }
 function escapeAttr(s) { return String(s).replace(/"/g,'&quot;'); }
+function timeAgo(pub) {
+  if (!pub) return '';
+  const d = new Date(pub);
+  const m = Math.floor((Date.now() - d.getTime()) / 60000);
+  if (m < 1) return state.lang==='zh'?'刚刚':'just now';
+  if (m < 60) return (state.lang==='zh' ? m+' 分钟前' : m+'m ago');
+  const h = Math.floor(m/60);
+  if (h < 24) return (state.lang==='zh' ? h+' 小时前' : h+'h ago');
+  const dd = Math.floor(h/24);
+  return (state.lang==='zh' ? dd+' 天前' : dd+'d ago');
+}
 
 // --- SCAM ---
 function renderScam(root) {

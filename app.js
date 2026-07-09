@@ -1551,6 +1551,18 @@ function renderMe(root) {
 // ---------------- INIT ----------------
 function bindGlobal() {
   document.getElementById('langBtn').onclick = () => { state.lang = state.lang === 'zh' ? 'en' : 'zh'; applyState(); };
+  // Top app bar pill toggles Big Text Mode
+  const themePill = document.getElementById('themePill');
+  if (themePill) {
+    themePill.style.cursor = 'pointer';
+    themePill.onclick = () => { state.bigText = !state.bigText; applyState(); };
+  }
+  // Sidebar footer pill also toggles
+  const sideTheme = document.getElementById('sideThemeText');
+  if (sideTheme && sideTheme.parentElement) {
+    sideTheme.parentElement.style.cursor = 'pointer';
+    sideTheme.parentElement.onclick = () => { state.bigText = !state.bigText; applyState(); };
+  }
   document.getElementById('bubbleFab').onclick = () => state.aiOpen ? closeSheet() : openSheet();
   document.getElementById('sheetClose').onclick = closeSheet;
   document.getElementById('sheetMask').onclick = closeSheet;

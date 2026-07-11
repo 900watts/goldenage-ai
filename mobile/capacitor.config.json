@@ -1,0 +1,8 @@
+{
+  "appId": "com.goldenage.app",
+  "appName": "GoldenAge",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "goldenage-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Capacitor wrapper that turns the GoldenAge web app into a sideloadable Android APK (no app-store license needed).",
+  "scripts": {
+    "prep": "node prep-web.cjs",
+    "sync": "npm run prep && cap sync",
+    "android": "npm run sync && cap open android",
+    "build:android": "npm run sync && cd android && ./gradlew assembleDebug"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2"
+  },
+  "dependencies": {
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/android": "^6.1.2"
+  }
+}

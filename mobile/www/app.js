@@ -87,16 +87,6 @@ const I18N = {
     setupEditProfile: '重新填写资料',
     newsTopicHealth: '健康养生', newsTopicLocal: '本地新闻', newsTopicNational: '国家大事', newsTopicWorld: '国际新闻', newsTopicFinance: '财经', newsTopicTech: '科技', newsTopicSports: '体育', newsTopicCulture: '文化娱乐', newsTopicWeather: '气象', newsTopicFood: '美食',
     setupSave: '完成设置', setupSkip: '稍后再说',
-    roleTitle: '您是？', roleSub: '请选择您的身份，这决定您如何使用本应用',
-    roleElderly: '我是长辈（被守护）', roleElderlySub: '我会收到守护人的关心与紧急通知',
-    roleGuardian: '我是监护人', roleGuardianSub: '我来守护我的家人',
-    pairCodeTitle: '您的配对码', pairCodeSub: '把这个码发给您的守护人，对方输入即可与您配对',
-    pairAccountId: '我的账号ID', pairAccountIdSub: '也可以把这一长串账号ID发给守护人',
-    pairGuardianPrompt: '输入长辈的配对码或账号ID', pairGuardianPh: '例如 K7P2QX 或完整账号ID',
-    pairBind: '绑定', pairSkipBind: '稍后绑定',
-    pairBindOk: '已与长辈配对', pairBindFail: '未找到该长辈，请检查配对码', pairBindSelf: '不能与自己配对',
-    pairShareHint: '把上面的配对码或账号ID发给您的守护人，对方在「我的 → 账号与配对」中输入即可。',
-    meAccount: '账号与配对', mePairWithElder: '绑定长辈', mePaired: '已配对', meNotPaired: '尚未配对', meCopy: '复制',
     mobIndependent: '行动自如', mobCane: '需拐杖', mobWalker: '需助行器', mobWheelchair: '需轮椅',
     hearNormal: '正常', hearMild: '轻度下降', hearModerate: '中度下降', hearSevere: '重度下降',
     aiBubbleLabel: '智能助手', aiBubbleOnline: '已就绪',
@@ -176,16 +166,6 @@ const I18N = {
     setupEditProfile: 'Edit profile',
     newsTopicHealth: 'Health & wellness', newsTopicLocal: 'Local news', newsTopicNational: 'National', newsTopicWorld: 'World', newsTopicFinance: 'Finance', newsTopicTech: 'Tech', newsTopicSports: 'Sports', newsTopicCulture: 'Culture & entertainment', newsTopicWeather: 'Weather', newsTopicFood: 'Food',
     setupSave: 'Finish setup', setupSkip: 'Skip for now',
-    roleTitle: 'Who are you?', roleSub: 'Choose your role — it decides how you use the app',
-    roleElderly: 'I am the elder (protected)', roleElderlySub: 'I will receive care and emergency alerts from my guardian',
-    roleGuardian: 'I am the guardian', roleGuardianSub: 'I look after a family member',
-    pairCodeTitle: 'Your pairing code', pairCodeSub: 'Share this code with your guardian; they enter it to pair with you',
-    pairAccountId: 'My account ID', pairAccountIdSub: 'You can also send this long account ID to your guardian',
-    pairGuardianPrompt: 'Enter the elder’s pairing code or account ID', pairGuardianPh: 'e.g. K7P2QX or the full account ID',
-    pairBind: 'Pair', pairSkipBind: 'Pair later',
-    pairBindOk: 'Paired with the elder', pairBindFail: 'Elder not found — check the code', pairBindSelf: 'Cannot pair with yourself',
-    pairShareHint: 'Send the pairing code or account ID above to your guardian; they enter it under "Me → Account & Pairing".',
-    meAccount: 'Account & Pairing', mePairWithElder: 'Pair with elder', mePaired: 'Paired', meNotPaired: 'Not paired', meCopy: 'Copy',
     mobIndependent: 'Independent', mobCane: 'Uses cane', mobWalker: 'Uses walker', mobWheelchair: 'Wheelchair',
     hearNormal: 'Normal', hearMild: 'Mild loss', hearModerate: 'Moderate loss', hearSevere: 'Severe loss',
     aiBubbleLabel: 'Companion', aiBubbleOnline: 'Online',
@@ -1167,72 +1147,9 @@ function wizardInitFromProfile(u) {
       guardian_name: p.guardian_name || '',
       guardian_relationship: p.guardian_relationship || '',
       guardian_phone: p.guardian_phone || '',
-      role: p.role || '',
-      pairing_code: p.pairing_code || '',
-      elder_account_id: p.elder_account_id || '',
-      guardian_account_id: p.guardian_account_id || '',
     },
     user: u,
   };
-}
-
-// Generate a short, human-friendly, unambiguous pairing code (6 chars).
-function genPairingCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I
-  let s = '';
-  for (let i = 0; i < 6; i++) s += chars[Math.floor(Math.random() * chars.length)];
-  return s;
-}
-
-// Role selection gate shown before the setup wizard (and from Settings if no role yet).
-function wizardRoleGate(root, isZh) {
-  const w = renderAuth._wizard;
-  root.innerHTML = `
-    <div style="display:flex;flex-direction:column;align-items:stretch;padding:24px;width:100%;min-height:100%;background:var(--bg-app)">
-      <h2 style="margin-bottom:4px">${t('roleTitle')}</h2>
-      <p class="text-soft" style="margin-bottom:22px">${t('roleSub')}</p>
-      <button class="big-btn primary" id="roleElderly" style="margin-bottom:14px;text-align:left;padding:20px">
-        <div style="font-size:1.2rem;font-weight:700">${t('roleElderly')}</div>
-        <div class="text-soft" style="font-size:.9rem;margin-top:4px">${t('roleElderlySub')}</div>
-      </button>
-      <button class="big-btn ghost" id="roleGuardian" style="text-align:left;padding:20px;border:2px solid var(--border-app)">
-        <div style="font-size:1.2rem;font-weight:700">${t('roleGuardian')}</div>
-        <div class="text-soft" style="font-size:.9rem;margin-top:4px">${t('roleGuardianSub')}</div>
-      </button>
-    </div>`;
-  document.getElementById('roleElderly').onclick = () => { w.data.role = 'elderly'; renderAuthSetup(root, isZh); };
-  document.getElementById('roleGuardian').onclick = () => { w.data.role = 'guardian'; renderPairInput(root, isZh); };
-}
-
-// Guardian: enter the elder's pairing code / account id to pair now.
-function renderPairInput(root, isZh) {
-  root.innerHTML = `
-    <div style="display:flex;flex-direction:column;align-items:stretch;padding:24px;width:100%;min-height:100%;background:var(--bg-app)">
-      <h2 style="margin-bottom:4px">${t('roleGuardian')}</h2>
-      <p class="text-soft" style="margin-bottom:18px">${t('pairGuardianPrompt')}</p>
-      <input id="pairCode" style="font-size:1.3rem;padding:14px;border-radius:12px;border:1px solid var(--border-app);width:100%;letter-spacing:2px" placeholder="${t('pairGuardianPh')}">
-      <div style="height:16px"></div>
-      <button class="big-btn primary" id="pairBind">${t('pairBind')}</button>
-      <div style="height:10px"></div>
-      <button class="big-btn ghost" id="pairSkip" style="width:100%;min-width:0;background:transparent;border:0;color:var(--muted)">${t('pairSkipBind')}</button>
-    </div>`;
-  const tryBind = async () => {
-    const code = (document.getElementById('pairCode').value || '').trim();
-    if (!code) return toast(isZh ? '请输入配对码' : 'Enter a code', true);
-    if (!sb) return toast(isZh ? '请先登录' : 'Sign in first', true);
-    const { data, error } = await sb.rpc('pair_with_elder', { p_code: code });
-    if (error || !data || !data.ok) {
-      const msg = data && data.error === 'self' ? t('pairBindSelf')
-                : data && data.error === 'not_found' ? t('pairBindFail')
-                : (error && error.message) || t('pairBindFail');
-      return toast(msg, true);
-    }
-    w.data.elder_account_id = data.elder_id;
-    toast(t('pairBindOk'));
-    renderAuthSetup(root, isZh);
-  };
-  document.getElementById('pairBind').onclick = tryBind;
-  document.getElementById('pairSkip').onclick = () => renderAuthSetup(root, isZh);
 }
 
 function renderAuthSetup(root, isZh) {
@@ -1255,7 +1172,6 @@ function renderAuthSetup(root, isZh) {
     return;
   }
   const w = renderAuth._wizard;
-  if (!w.data.role) { wizardRoleGate(root, isZh); return; }
   const total = 3;
   const titles = [t('setupStep1Title'), t('setupStep2Title'), t('setupStep3Title')];
   const subs   = [t('setupStep1Sub'),   t('setupStep2Sub'),   t('setupStep3Sub')];
@@ -1433,7 +1349,6 @@ async function wizardFinish(root, isZh, skip) {
     guardian_name: w.data.guardian_name || null,
     guardian_relationship: w.data.guardian_relationship || null,
     guardian_phone: w.data.guardian_phone || null,
-    role: w.data.role || null,
     // If they reached step 3 (or explicitly hit Next on step 2), mark complete.
     // If they hit Skip on step 1, leave setup_complete as-is so they can revisit.
     setup_complete: w.step >= 2 || skip ? true : (state.profile && state.profile.setup_complete) || false,
@@ -1489,19 +1404,9 @@ async function saveProfile(u, fields, complete, isZh, skip) {
     return;
   }
   try {
-    // Upsert (not update) so it works whether or not the auth trigger
-    // already created the profile row.
-    const base = { id: u.id, ...fields, setup_complete: complete };
-    // Elders get a unique, shareable pairing code (retry on collision).
-    let attempt = 0;
-    while (true) {
-      const row = { ...base };
-      if (fields.role === 'elderly' && !base.pairing_code) row.pairing_code = genPairingCode();
-      const { error } = await sb.from('profiles').upsert(row, { onConflict: 'id' });
-      if (!error) { base.pairing_code = row.pairing_code; break; }
-      if (error && error.code === '23505' && attempt < 6) { attempt++; continue; } // pairing_code collision
-      throw error;
-    }
+    const update = { ...fields, setup_complete: complete };
+    const { error } = await sb.from('profiles').update(update).eq('id', u.id);
+    if (error) throw error;
     // Also keep user_preferences in sync (big text / dark / language).
     await sb.from('user_preferences').update({
       big_text_mode: state.bigText, dark_mode: state.dark, language: state.lang
@@ -1513,7 +1418,7 @@ async function saveProfile(u, fields, complete, isZh, skip) {
         news_topics: fields.news_topics
       }).eq('user_id', u.id).catch(() => {});
     }
-    state.profile = { ...(state.profile || {}), ...fields, pairing_code: base.pairing_code, setup_complete: complete };
+    state.profile = { ...(state.profile || {}), ...fields, setup_complete: complete };
     // Live-refresh the in-memory preference cache for the news ranker.
     state._prefNewsTopics = fields.news_topics || [];
     state._awaitingSetup = false;
@@ -2460,31 +2365,6 @@ async function renderMe(root) {
       </div>
     </div>
 
-    <h3 style="font-size:1.05rem;margin:0 0 8px">${t('meAccount')}</h3>
-    <div class="card" style="padding:16px;margin-bottom:18px">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
-        <div style="font-size:.8rem" class="text-soft">${t('pairAccountId')}</div>
-        <button class="big-btn ghost" id="copyAcctId" style="width:auto;min-width:0;padding:6px 12px;font-size:.85rem">${t('meCopy')}</button>
-      </div>
-      <div style="font-family:monospace;font-size:.95rem;word-break:break-all;margin:4px 0 12px;color:var(--text)">${escapeHtml(sbUser?.id || '')}</div>
-      ${(() => {
-        if (p.role === 'elderly') {
-          if (p.pairing_code) {
-            return `<div style="font-size:.8rem" class="text-soft">${t('pairCodeTitle')}</div>
-              <div style="font-size:1.4rem;font-weight:700;letter-spacing:3px;margin:4px 0 8px;color:var(--primary)">${escapeHtml(p.pairing_code)}</div>
-              <p class="text-soft" style="font-size:.82rem;margin:0">${t('pairShareHint')}</p>`;
-          }
-          return `<div class="text-soft" style="font-size:.85rem">${t('meNotPaired')}</div>`;
-        } else if (p.role === 'guardian') {
-          const paired = !!p.elder_account_id;
-          return `<div style="font-size:.8rem" class="text-soft">${t('mePairWithElder')}</div>
-            <div style="font-size:1rem;font-weight:600;margin:4px 0 8px">${paired ? (t('mePaired')+' · '+escapeHtml(String(p.elder_account_id).slice(0,8))+'…') : t('meNotPaired')}</div>
-            ${paired ? '' : `<div style="display:flex;gap:8px"><input id="pairElderInput" style="flex:1;font-size:1rem;padding:10px;border-radius:10px;border:1px solid var(--border-app)" placeholder="${t('pairGuardianPh')}"><button class="big-btn primary" id="pairElderBtn" style="width:auto;min-width:0;padding:10px 16px">${t('pairBind')}</button></div>`}`;
-        }
-        return `<div class="text-soft" style="font-size:.85rem">${t('meNotPaired')}</div>`;
-      })()}
-    </div>
-
     <h3 style="font-size:1.05rem;margin:0 0 8px">${t('setupNewsTopics')}</h3>
     <div class="card" style="padding:14px;margin-bottom:18px">${newsChips}</div>
 
@@ -2609,30 +2489,6 @@ async function renderMe(root) {
     window.LiveData.setMapConfig('amap', '');
     amapInput.value = '';
     toast(state.lang==='zh'?'已清除':'Cleared');
-  };
-  const copyAcct = document.getElementById('copyAcctId');
-  if (copyAcct) copyAcct.onclick = () => {
-    const id = sbUser?.id || '';
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(id).then(() => toast(t('meCopy') + ' ✓')).catch(() => toast(t('meCopy')));
-    } else {
-      toast(t('meCopy'));
-    }
-  };
-  const pairElderBtn = document.getElementById('pairElderBtn');
-  if (pairElderBtn) pairElderBtn.onclick = async () => {
-    const code = (document.getElementById('pairElderInput').value || '').trim();
-    if (!code) return toast(isZh ? '请输入配对码' : 'Enter a code', true);
-    const { data, error } = await sb.rpc('pair_with_elder', { p_code: code });
-    if (error || !data || !data.ok) {
-      const msg = data && data.error === 'self' ? t('pairBindSelf')
-                : data && data.error === 'not_found' ? t('pairBindFail')
-                : (error && error.message) || t('pairBindFail');
-      return toast(msg, true);
-    }
-    if (state.profile) state.profile.elder_account_id = data.elder_id;
-    toast(t('pairBindOk'));
-    render();
   };
   document.getElementById('logoutBtn').onclick = async () => {
     if (sb) { try { await sb.auth.signOut(); } catch(_) {} }

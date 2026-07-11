@@ -1,6 +1,6 @@
 {
   "appId": "com.goldenage.app",
-  "appName": "GoldenAge",
+  "appName": "银龄智伴",
   "webDir": "www",
   "server": {
     "androidScheme": "https"

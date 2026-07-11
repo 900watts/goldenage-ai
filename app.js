@@ -24,7 +24,7 @@
 // ---------------- I18N ----------------
 const I18N = {
   zh: {
-    appTitle: '智享银龄',
+    appTitle: '银龄智伴（GoldenAge AI）',
     navHome: '首页', navMap: '地图', navFinance: '理财', navMe: '我的',
     bigTextOn: '大字模式：开', bigTextOff: '大字模式：关',
     greetingMorning: '早上好', greetingAfternoon: '下午好', greetingEvening: '晚上好',
@@ -53,7 +53,7 @@ const I18N = {
     meLang: '语言', meAccess: '无障碍设置', meBigText: '大字模式', meDark: '深色模式',
     meAi: 'AI 助手设置', meAiProvider: '服务', meAiKey: 'API Key', meAiKeyPh: '在此粘贴您的 API Key', meAiSave: '保存', meAiClear: '清除', meAiStatus: '状态', meAiStatusOff: '未配置', meAiStatusOn: '已配置', meAiNote: 'API Key 仅保存在您的浏览器中（localStorage），不会上传到任何服务器。',
     meLogout: '退出登录',
-    authTitle: '欢迎使用智享银龄', authSubtitle: '请输入您的手机号以继续',
+    authTitle: '欢迎使用银龄智伴（GoldenAge AI）', authSubtitle: '请输入您的手机号以继续',
     authPhoneLabel: '手机号',
     authPlaceholder: '+86 138 0000 0000', authSend: '发送验证码',
     authOtpTitle: '请输入验证码', authOtpSub: '验证码已发送至 ', authVerify: '验证', authResend: '重新发送',
@@ -113,7 +113,7 @@ const I18N = {
     todaySummary: '今日概览', nextMed: '下次用药', newsCount: '今日新闻', goldSnapshot: '金价快览',
   },
   en: {
-    appTitle: 'GoldenAge AI',
+    appTitle: '银龄智伴（GoldenAge AI）',
     navHome: 'Home', navMap: 'Map', navFinance: 'Finance', navMe: 'Me',
     bigTextOn: 'Big Text: On', bigTextOff: 'Big Text: Off',
     greetingMorning: 'Good morning', greetingAfternoon: 'Good afternoon', greetingEvening: 'Good evening',
@@ -142,7 +142,7 @@ const I18N = {
     meLang: 'Language', meAccess: 'Accessibility', meBigText: 'Big Text Mode', meDark: 'Dark Mode',
     meAi: 'AI Assistant Settings', meAiProvider: 'Provider', meAiKey: 'API Key', meAiKeyPh: 'Paste your API key here', meAiSave: 'Save', meAiClear: 'Clear', meAiStatus: 'Status', meAiStatusOff: 'Not configured', meAiStatusOn: 'Configured', meAiNote: 'API key is stored in your browser (localStorage) only and never sent to any server except the AI provider itself.',
     meLogout: 'Log Out',
-    authTitle: 'Welcome to GoldenAge', authSubtitle: 'Enter your phone to continue',
+    authTitle: 'Welcome to 银龄智伴（GoldenAge AI）', authSubtitle: 'Enter your phone to continue',
     authPhoneLabel: 'Phone number',
     authPlaceholder: '+1 555 000 0000', authSend: 'Send Code',
     authOtpTitle: 'Enter the code', authOtpSub: 'Code sent to ', authVerify: 'Verify', authResend: 'Resend',
@@ -340,7 +340,7 @@ function applyI18n() {
     const k = el.dataset.i18nPlaceholder;
     if (I18N[state.lang][k]) el.placeholder = I18N[state.lang][k];
   });
-  document.title = state.lang === 'zh' ? '智享银龄 · GoldenAge AI' : 'GoldenAge AI · 智享银龄';
+  document.title = '银龄智伴（GoldenAge AI）';
   document.getElementById('appTitle').textContent = t('appTitle');
 }
 

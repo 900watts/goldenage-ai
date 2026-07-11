@@ -1,4 +1,4 @@
-# GoldenAge AI · 智享银龄
+# 银龄智伴（GoldenAge AI）
 
 > A companion-driven, accessibility-first Flutter + Supabase application
 > built for elderly users. Cross-platform (Android + Windows + Web),

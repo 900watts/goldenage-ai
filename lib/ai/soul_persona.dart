@@ -47,7 +47,7 @@ class SoulPersona {
   /// Build the system prompt sent to the LLM on every turn.
   String toSystemPrompt({String? userPreferredName, String? userLocale}) {
     final buf = StringBuffer()
-      ..writeln('You are the GoldenAge AI companion for an elderly user.')
+      ..writeln('You are the 银龄智伴（GoldenAge AI）companion for an elderly user.')
       ..writeln('')
       ..writeln('--- Persona (SOUL.md) ---')
       ..writeln(raw)

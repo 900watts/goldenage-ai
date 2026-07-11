@@ -75,7 +75,7 @@ serve(async (req) => {
     no_activity_24h:     '24小时无活动',
     manual_alert:        '手动触发紧急告警',
   };
-  const message = `【GoldenAge 紧急通知】您的家人可能遇到紧急情况：${kindText[payload.kind]}。位置：${mapLink}`;
+  const message = `【银龄智伴 紧急通知】您的家人可能遇到紧急情况：${kindText[payload.kind]}。位置：${mapLink}`;
 
   // 3. Send SMS via Twilio (skip if not configured)
   const smsResults: unknown[] = [];

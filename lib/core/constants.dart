@@ -3,7 +3,7 @@ class AppConstants {
   AppConstants._();
 
   /// App name shown in the UI.
-  static const String appName = 'GoldenAge AI';
+  static const String appName = '银龄智伴（GoldenAge AI）';
 
   /// Minimum touch target size in logical pixels (spec: ≥64×64).
   static const double minTouchTarget = 64.0;

@@ -1,6 +1,6 @@
 {
   "@@locale": "zh",
-  "appTitle": "智享银龄",
+  "appTitle": "银龄智伴（GoldenAge AI）",
   "@appTitle": {},
   "appSubtitle": "长者智能伴侣",
   "@appSubtitle": {},
@@ -113,7 +113,7 @@
   "profileLogout": "退出登录",
   "profileEdit": "编辑资料",
 
-  "authTitle": "欢迎使用智享银龄",
+  "authTitle": "欢迎使用银龄智伴（GoldenAge AI）",
   "authSubtitle": "请验证您的手机号以继续",
   "authPhonePlaceholder": "请输入手机号",
   "authSendOtp": "发送验证码",

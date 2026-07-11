@@ -1,6 +1,6 @@
 {
   "@@locale": "en",
-  "appTitle": "GoldenAge AI",
+  "appTitle": "银龄智伴（GoldenAge AI）",
   "@appTitle": {},
   "appSubtitle": "Companion for Seniors",
 
@@ -111,7 +111,7 @@
   "profileLogout": "Log Out",
   "profileEdit": "Edit Profile",
 
-  "authTitle": "Welcome to GoldenAge AI",
+  "authTitle": "Welcome to 银龄智伴（GoldenAge AI）",
   "authSubtitle": "Please verify your phone number to continue",
   "authPhonePlaceholder": "Enter your phone number",
   "authSendOtp": "Send OTP",

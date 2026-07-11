@@ -205,6 +205,67 @@ const I18N = {
 
 const t = (k) => I18N[state.lang][k] || k;
 
+// ----- AI tool definitions (passed to the LLM via the Edge Function) -----
+// Each tool has a JSON-schema shape that Qwen3-8B / OpenAI-compatible
+// models understand. The client (see aiChat below) executes the matching
+// function on receipt of a tool_call.
+const APP_TOOLS = [
+  {
+    type: 'function',
+    function: {
+      name: 'navigate',
+      description: 'Switch to a different tab in the app. Use this when the user asks to open a section (map, news, finance, scam checker, etc.) or to go home.',
+      parameters: {
+        type: 'object',
+        properties: {
+          route: { type: 'string', enum: ['home', 'features', 'map', 'news', 'finance', 'scam', 'medication', 'guardian', 'me'], description: 'Tab to switch to' }
+        },
+        required: ['route']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'set_language',
+      description: 'Switch the app language between Chinese (zh) and English (en).',
+      parameters: { type: 'object', properties: { lang: { type: 'string', enum: ['zh', 'en'] } }, required: ['lang'] }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'trigger_sos',
+      description: 'Trigger the emergency SOS flow. Only call this when the user explicitly asks for help or to send an SOS.',
+      parameters: { type: 'object', properties: {} }
+    }
+  },
+  { type: 'function', function: { name: 'open_ai_sheet',       description: 'Open the AI chat sheet (this same panel). No-op if already open.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'open_finance',       description: 'Open the live stock/finance page.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'open_map',           description: 'Open the map page (POI search around the user).', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'open_news',          description: 'Open the news page.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'open_scam',          description: 'Open the scam-check page so the user can paste a suspicious message.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'open_medication',    description: 'Open the medication reminder page.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'open_guardian',      description: 'Open the guardian pairing/management page.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'open_me',            description: 'Open the profile/settings page (Me tab).', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'open_home',          description: 'Go to the home tab.', parameters: { type: 'object', properties: {} } } }
+];
+
+// Quick navigation aliases for the LLM (so it can map natural-language
+// requests to a route even if the user says "open my medicines" or "show
+// me the map" etc.). The LLM only needs to call navigate(route=...).
+const APP_ROUTE_ALIASES = {
+  'home': 'home', 'main': 'home', 'page': 'home', '首页': 'home', '主页': 'home',
+  'features': 'features', '功能': 'features', 'all features': 'features',
+  'map': 'map', 'maps': 'map', '地图': 'map', 'location': 'map', 'nearby': 'map',
+  'news': 'news', '新闻': 'news', 'headlines': 'news',
+  'finance': 'finance', 'stock': 'finance', 'stocks': 'finance', '行情': 'finance', '股票': 'finance', 'gold': 'finance', '金价': 'finance',
+  'scam': 'scam', 'fraud': 'scam', '防诈骗': 'scam', '诈骗': 'scam',
+  'medication': 'medication', 'meds': 'medication', 'pill': 'medication', 'pills': 'medication', 'reminder': 'medication', '用药': 'medication', '提醒': 'medication',
+  'guardian': 'guardian', 'family': 'guardian', '守护者': 'guardian', '家庭': 'guardian',
+  'me': 'me', 'profile': 'me', 'settings': 'me', '我的': 'me', '设置': 'me'
+};
+
 // Dev-mode key for the dev-signin Edge Function. This key is a shared
 // secret: it is ALSO stored in the Supabase project's secrets. It is
 // in the client bundle, so it provides NO security — it only lets the
@@ -226,6 +287,7 @@ function initSupabase() {
       auth: { persistSession: true, autoRefreshToken: true }
     });
     sb.supabaseKey = SB_ANON; // expose anon key for LiveData fetch wrappers
+    window.sb = sb; // expose for cross-file access (e.g. LiveData.llmChat)
     // Check existing session
     sb.auth.getSession().then(({ data }) => {
       if (data.session) {
@@ -677,12 +739,64 @@ async function aiChat(userText) {
       { role: 'user', content: userText },
     ];
     try {
-      const r = await window.LiveData.llmChat(messages, { temperature: 0.65, max_tokens: 500 });
-      if (r && r.text) {
+      const r = await window.LiveData.llmChat(messages, {
+        temperature: 0.65,
+        max_tokens: 500,
+        tools: APP_TOOLS,
+        tool_choice: 'auto'
+      });
+      if (r && (r.text || (r.tool_calls && r.tool_calls.length))) {
         // Update the credits indicator in the Me card (if it's open).
         const remEl = document.getElementById('aiCreditsRemaining');
         if (remEl && r.credits_remaining != null) remEl.textContent = r.credits_remaining;
-        return { reply: r.text.trim(), tool: '🤖 Qwen3-8B' };
+        // Execute any tool calls the model returned. If a tool fires
+        // we close the chat sheet and let the user see the result.
+        const calls = r.tool_calls || [];
+        let toolLabel = '🤖 Qwen3-8B';
+        for (const c of calls) {
+          const fn = c.function || {};
+          const name = fn.name;
+          let args = {};
+          try { args = fn.arguments ? JSON.parse(fn.arguments) : {}; } catch (_) {}
+          if (name === 'navigate' && args.route) {
+            toolLabel = '🧭 → ' + args.route;
+            // Defer navigation so the user sees the tool-label first.
+            setTimeout(() => { try { go(args.route); } catch(_) {} }, 300);
+          } else if (name === 'set_language' && (args.lang === 'zh' || args.lang === 'en')) {
+            toolLabel = '🌐 → ' + args.lang;
+            setTimeout(() => {
+              try { state.lang = args.lang; applyState(); if (sbReady()) sb.from('user_preferences').update({ language: args.lang }).eq('user_id', sbUser.id).catch(()=>{}); } catch(_) {}
+            }, 300);
+          } else if (name === 'trigger_sos') {
+            toolLabel = '🆘 SOS';
+            setTimeout(() => { try { triggerSos(); } catch(_) {} }, 300);
+          } else if (name === 'open_ai_sheet') {
+            // already open; no-op
+            toolLabel = '💬 AI';
+          } else if (name === 'open_finance') {
+            toolLabel = '💰 行情';
+            setTimeout(() => { try { go('finance'); } catch(_) {} }, 300);
+          } else if (name === 'open_map') {
+            toolLabel = '🗺️ 地图';
+            setTimeout(() => { try { go('map'); } catch(_) {} }, 300);
+          } else if (name === 'open_news') {
+            toolLabel = '📰 新闻';
+            setTimeout(() => { try { go('news'); } catch(_) {} }, 300);
+          } else if (name === 'open_scam') {
+            toolLabel = '🛡️ 防诈骗';
+            setTimeout(() => { try { go('scam'); } catch(_) {} }, 300);
+          } else if (name === 'open_medication') {
+            toolLabel = '💊 用药';
+            setTimeout(() => { try { go('medication'); } catch(_) {} }, 300);
+          } else if (name === 'open_guardian') {
+            toolLabel = '👨‍👩‍👧 守护者';
+            setTimeout(() => { try { go('guardian'); } catch(_) {} }, 300);
+          } else if (name === 'open_me') {
+            toolLabel = '⚙️ 我的';
+            setTimeout(() => { try { go('me'); } catch(_) {} }, 300);
+          }
+        }
+        return { reply: (r.text || '').trim(), tool: toolLabel };
       }
       if (r && r.error) {
         if (r.error === 'insufficient_credits') {
@@ -1691,15 +1805,15 @@ async function saveProfile(u, fields, complete, isZh, skip) {
       throw error;
     }
     // Also keep user_preferences in sync (big text / dark / language).
-    await sb.from('user_preferences').update({
+    sb.from('user_preferences').update({
       big_text_mode: state.bigText, dark_mode: state.dark, language: state.lang
-    }).eq('user_id', u.id).catch(() => {});
+    }).eq('user_id', u.id).then(() => {}).catch(() => {});
     // Upsert the news_topics as the user_preferences.news_topics mirror as well
     // so AI agents can fetch it without hitting the profiles row.
     if (Array.isArray(fields.news_topics)) {
-      await sb.from('user_preferences').update({
+      sb.from('user_preferences').update({
         news_topics: fields.news_topics
-      }).eq('user_id', u.id).catch(() => {});
+      }).eq('user_id', u.id).then(() => {}).catch(() => {});
     }
     state.profile = { ...(state.profile || {}), ...fields, pairing_code: base.pairing_code, setup_complete: complete };
     // Live-refresh the in-memory preference cache for the news ranker.
@@ -1862,8 +1976,13 @@ function renderHome(root) {
       const q = quotes[0];
       const el = document.getElementById('homeGold');
       if (el && q && q.price != null) {
-        const up = q.change >= 0;
-        el.innerHTML = `¥${(q.price * 7.2).toFixed(0)}/g <span class="${up?'up':'down'}">${up?'↑':'↓'} ${q.pct>=0?'+':''}${q.pct.toFixed(2)}%</span>`;
+        const up = (q.change || 0) >= 0;
+        // USD/oz → CNY/g. 1 oz = 31.1035 g. 1 USD ≈ 7.2 CNY (rough; live
+        // FX would be more accurate but we keep it static to avoid an extra
+        // API call). The user can read the unit on the Finance screen.
+        const cnyPerG = q.price * 7.2 / 31.1035;
+        const pct = q.pct != null ? q.pct : 0;
+        el.innerHTML = `¥${cnyPerG.toFixed(2)}/g <span class="${up?'up':'down'}">${up?'↑':'↓'} ${pct>=0?'+':''}${pct.toFixed(2)}%</span>`;
       } else if (el) { el.textContent = '—'; }
     } catch(_) {}
     try {
@@ -1928,6 +2047,7 @@ async function triggerSos(askConfirm = true) {
 // --- MAP --- (live data via OpenStreetMap Nominatim + Overpass API)
 function renderMap(root) {
   const filter = renderMap._filter || 'hospital';
+  const isZh = state.lang === 'zh';
   root.innerHTML = `
     <h2 class="section-title">${t('mapTitle')}</h2>
     <div class="chip-row">
@@ -1938,9 +2058,14 @@ function renderMap(root) {
     </div>
     <div class="pc-split">
       <div>
-        <div class="map-box">
-          <div class="label" id="mapStatus">${t('mapLocating')}</div>
-          <div class="map-pin"></div>
+        <div class="map-box" id="mapBox" style="position:relative;overflow:hidden;border-radius:18px;height:340px;background:linear-gradient(135deg,#1a3d5c,#0f2433)">
+          <div class="label" id="mapStatus" style="position:absolute;left:12px;top:12px;z-index:2;background:rgba(255,255,255,.85);color:#1a1d2e;padding:6px 10px;border-radius:8px;font-weight:600;font-size:.85rem;backdrop-filter:blur(4px)">${t('mapLocating')}</div>
+          <div class="map-pin" id="mapPin" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;display:none"></div>
+          <img id="mapImg" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none">
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="big-btn ghost" id="mapRetry" style="flex:1;min-width:0;font-size:.95rem;padding:10px 14px">${isZh?'📍 重新获取位置':'📍 Retry location'}</button>
+          <button class="big-btn ghost" id="mapOpenAmap" style="flex:1;min-width:0;font-size:.95rem;padding:10px 14px;display:none">${isZh?'在高德地图打开':'Open in AMap'}</button>
         </div>
       </div>
       <div class="poi-list" id="poiList">
@@ -1948,30 +2073,59 @@ function renderMap(root) {
       </div>
     </div>`;
   root.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { renderMap._filter = b.dataset.f; render(); });
+  const retryBtn = document.getElementById('mapRetry');
+  if (retryBtn) retryBtn.onclick = () => {
+    try { localStorage.removeItem('last_loc'); } catch(_) {}
+    render();
+  };
   // Live fetch
   (async () => {
     const list = document.getElementById('poiList');
     const status = document.getElementById('mapStatus');
+    const pin = document.getElementById('mapPin');
+    const img = document.getElementById('mapImg');
+    const openAmap = document.getElementById('mapOpenAmap');
     if (!list) return;
-    if (status) status.textContent = state.lang==='zh'?'正在获取附近数据…':'Fetching nearby…';
-    const items = await window.LiveData.fetchPOIs(renderMap._filter || 'hospital');
-    if (items && items.__error) {
+    if (status) status.textContent = isZh ? '正在获取位置…' : 'Locating…';
+    const r = await window.LiveData.fetchPOIs(renderMap._filter || 'hospital');
+    if (r && r.__error) {
       list.innerHTML = '<div class="card" style="text-align:center;color:var(--warn);padding:30px">' +
-        (state.lang==='zh'?'地图服务错误：':'Map service error: ') + escapeHtml(items.__error) +
+        (isZh?'地图服务错误：':'Map service error: ') + escapeHtml(r.__error) +
         '<br><br><span style="color:var(--muted);font-size:.9rem">' +
-        (state.lang==='zh'?'请稍后重试，或检查网络':'Please try again later, or check your network') +
+        (isZh?'请稍后重试，或检查网络':'Please try again later, or check your network') +
         '</span></div>';
-      if (status) status.textContent = state.lang==='zh'?'服务异常':'Service error';
+      if (status) status.textContent = isZh ? '服务异常' : 'Service error';
       return;
     }
-    if (!items || !items.length) {
-      list.innerHTML = '<div class="card" style="text-align:center;color:var(--muted-app);padding:30px">'+ (state.lang==='zh'?'附近没有找到相关地点。试试其他类型或调整位置。':'No results nearby. Try a different category or location.') +'</div>';
-      if (status) status.textContent = state.lang==='zh'?'暂无数据':'No data';
+    const items = r?.items || [];
+    const lat = r?.lat, lng = r?.lng;
+    if (pin) pin.style.display = 'block';
+    if (img) {
+      const url = window.LiveData.fetchStaticMapUrl ? window.LiveData.fetchStaticMapUrl(lat, lng, items) : null;
+      if (url) {
+        img.src = url;
+        img.style.display = 'block';
+        if (img.parentElement) img.parentElement.style.background = '#0f2433';
+      } else {
+        // Fallback: synthetic map with the pin in the center, no real tiles
+        if (img.parentElement) img.parentElement.style.background = 'linear-gradient(135deg,#1a3d5c 0%,#2d5a87 50%,#1a3d5c 100%)';
+      }
+    }
+    if (openAmap && lat != null && lng != null) {
+      openAmap.style.display = 'inline-block';
+      openAmap.onclick = () => {
+        const u = `https://uri.amap.com/marker?position=${lng},${lat}&name=${encodeURIComponent(isZh ? '我的位置' : 'My location')}&src=GoldenAge&callnative=1`;
+        window.open(u, '_blank');
+      };
+    }
+    if (!items.length) {
+      list.innerHTML = '<div class="card" style="text-align:center;color:var(--muted-app);padding:30px">'+ (isZh?'附近没有找到相关地点。试试其他类型或调整位置。':'No results nearby. Try a different category or location.') +'</div>';
+      if (status) status.textContent = (isZh ? '找到 ' : '') + '0 ' + (isZh ? '个' : 'found');
       return;
     }
-    if (status) status.textContent = state.lang==='zh' ? items.length+' 个' : items.length+' nearby';
+    if (status) status.textContent = (isZh ? '附近 ' : 'Nearby: ') + items.length + (isZh ? ' 个' : '');
     list.innerHTML = items.map(p => `
-      <div class="card-label card">
+      <div class="card-label card" data-lat="${p.lat}" data-lng="${p.lng}" style="cursor:pointer">
         <div class="card-icon" style="background:linear-gradient(135deg,var(--primary),var(--primary-dark))">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
         </div>
@@ -1981,6 +2135,14 @@ function renderMap(root) {
         </div>
       </div>
     `).join('');
+    // Click a POI to recenter the map
+    list.querySelectorAll('[data-lat]').forEach(c => c.onclick = () => {
+      const plat = parseFloat(c.dataset.lat), plng = parseFloat(c.dataset.lng);
+      if (!isFinite(plat) || !isFinite(plng)) return;
+      const url2 = window.LiveData.fetchStaticMapUrl(plat, plng, items, '600x400', 15);
+      if (url2 && img) { img.src = url2; img.style.display = 'block'; }
+      if (status) status.textContent = (isZh ? '已选中 ' : 'Selected: ') + (c.querySelector('.card-title')?.textContent || '');
+    });
   })();
 }
 
@@ -2289,12 +2451,16 @@ function renderVerdict(r) {
 }
 
 // --- GUARDIAN ---
-// Guardian state — persisted
+// Guardian state — persisted. The list starts empty; the user adds their
+// own guardians via the QR/pair flow. We also clear the legacy 'demo-abc123'
+// seed that previous versions planted.
 const guardians = [];
 function loadGuardians() {
   try { guardians.push(...JSON.parse(localStorage.getItem('guardians') || '[]')); } catch(_) {}
-  if (guardians.length === 0) {
-    guardians.push({ name: '王小明 · 儿子', nameEn: 'Xiao Ming · Son', paired: true, token: 'demo-abc123' });
+  if (guardians.some(g => g.token === 'demo-abc123')) {
+    const fresh = guardians.filter(g => g.token !== 'demo-abc123');
+    guardians.length = 0;
+    guardians.push(...fresh);
     saveGuardians();
   }
 }

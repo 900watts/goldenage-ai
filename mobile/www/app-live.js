@@ -381,23 +381,68 @@ async function fetchPOIsNominatim(kind, lat, lng) {
   } catch (_) { return null; }
 }
 
-async function fetchPOIs(kind, lat = 39.9085, lng = 116.3975) {
+// Returns the device's best-known location. Tries geolocation first; on
+// failure or timeout, falls back to the last cached location in
+// localStorage, then to Beijing (39.9085, 116.3975).
+const DEFAULT_LOC = { lat: 39.9085, lng: 116.3975, label: '北京' };
+function getLastLocation() {
+  try {
+    const s = localStorage.getItem('last_loc');
+    if (s) return JSON.parse(s);
+  } catch (_) {}
+  return DEFAULT_LOC;
+}
+function setLastLocation(lat, lng) {
+  try { localStorage.setItem('last_loc', JSON.stringify({ lat, lng, t: Date.now() })); } catch (_) {}
+}
+
+async function getCurrentLocation(timeoutMs = 5000) {
   if (navigator.geolocation) {
     try {
       const pos = await new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(p => resolve(p), () => reject(), { timeout: 4000, maximumAge: 60000 });
+        navigator.geolocation.getCurrentPosition(p => resolve(p), () => reject(),
+          { timeout: timeoutMs, maximumAge: 60000, enableHighAccuracy: false });
       });
-      if (pos && pos.coords) { lat = pos.coords.latitude; lng = pos.coords.longitude; }
+      if (pos && pos.coords && pos.coords.latitude) {
+        setLastLocation(pos.coords.latitude, pos.coords.longitude);
+        return { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      }
     } catch (_) { /* fall through */ }
   }
+  return getLastLocation();
+}
+
+async function fetchPOIs(kind) {
+  const loc = await getCurrentLocation();
+  const lat = loc.lat, lng = loc.lng;
   const cfg = getMapConfig();
   if (cfg.key) {
     const r = await fetchPOIsAmap(kind, lat, lng, cfg.key);
-    if (r && !r.__amapError) return r;
+    if (r && !r.__amapError) return { items: r, lat, lng };
     if (r && r.__amapError) return { __error: r.__amapError };
-    // Key set but returned no results — still proceed to Nominatim.
   }
-  return await fetchPOIsNominatim(kind, lat, lng);
+  const r2 = await fetchPOIsNominatim(kind, lat, lng);
+  return { items: r2 || [], lat, lng };
+}
+
+// AMap static map URL. Generates a 2D map snapshot centered on (lat,lng)
+// with markers for each POI. Returns null if the key isn't configured.
+// Docs: https://lbs.amap.com/api/webservice/guide/tools/staticmaps
+function fetchStaticMapUrl(lat, lng, pois, size = '600x400', zoom = 14) {
+  const cfg = getMapConfig();
+  if (!cfg.key) return null;
+  // Build the markers list. AMap static maps uses:
+  //   markers=-1,markername=A,location:lat,lng|...
+  // We use a small fixed set of marker types. Cap at 10 to keep URL short.
+  const parts = [];
+  const cap = (pois || []).slice(0, 10);
+  for (let i = 0; i < cap.length; i++) {
+    const p = cap[i];
+    if (p.lat == null || p.lng == null) continue;
+    parts.push(`mid,0xFF6F61,A:${p.lng},${p.lat}`);
+  }
+  const markers = parts.length ? `&markers=${encodeURIComponent(parts.join('|'))}` : '';
+  return `https://restapi.amap.com/v3/staticmap?location=${lng},${lat}&zoom=${zoom}&size=${size}&scale=2&key=${encodeURIComponent(cfg.key)}${markers}`;
 }
 
 
@@ -492,11 +537,9 @@ async function llmReadCredits() {
 }
 
 // OpenAI-compatible chat completion. Returns
-//   { text, raw }            — success
-//   { error, ... }          — failure (with reason)
-//   { error: 'insufficient_credits', credits_remaining, credits_total, reset_at }
-//   { error: 'auth' }        — not signed in
-//   { error: 'llm_not_configured' } — server has no key (only happens in misconfig)
+// OpenAI-compatible chat completion with optional tool-calling.
+//   { text, tool_calls, raw, usage, credits_remaining, ... } — success
+//   { error, ... }                                            — failure
 async function llmChat(messages, opts = {}) {
   try {
     const sess = await window.sb?.auth?.getSession?.();
@@ -511,7 +554,9 @@ async function llmChat(messages, opts = {}) {
         messages,
         temperature: opts.temperature || 0.6,
         max_tokens:   opts.max_tokens   || 600,
-        tz_offset_minutes: getTzOffsetMinutes()
+        tz_offset_minutes: getTzOffsetMinutes(),
+        tools: opts.tools,
+        tool_choice: opts.tool_choice
       })
     });
     const body = await r.json().catch(() => ({}));
@@ -526,6 +571,7 @@ async function llmChat(messages, opts = {}) {
     }
     return {
       text: body.reply || '',
+      tool_calls: body.tool_calls || [],
       raw: body,
       usage: body.usage,
       credits_remaining: body.credits_remaining,
@@ -548,6 +594,8 @@ window.LiveData = {
   fetchQuotes,
   fetchDailyDigest,
   fetchPOIs,
+  fetchStaticMapUrl,
+  getCurrentLocation,
   fetchWeather,
   imageFor,
   wikiImageFor,

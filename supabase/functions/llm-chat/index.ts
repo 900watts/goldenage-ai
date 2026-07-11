@@ -133,7 +133,13 @@ serve(async (req) => {
         messages,
         temperature: Number.isFinite(body?.temperature) ? body.temperature : 0.6,
         max_tokens: Number.isFinite(body?.max_tokens) ? Math.min(body.max_tokens, 1024) : 512,
-        stream: false
+        stream: false,
+        // Pass through tool definitions if the client sent them. Most
+        // SiliconFlow / OpenAI-compatible models (incl. Qwen3) honor
+        // `tools` + `tool_choice` and return `tool_calls` in the response.
+        ...(Array.isArray(body?.tools) && body.tools.length
+          ? { tools: body.tools, tool_choice: body.tool_choice || 'auto' }
+          : {})
       })
     });
     if (!r.ok) {
@@ -158,7 +164,10 @@ serve(async (req) => {
   }
 
   // 4. Parse the response.
-  const reply = completion?.choices?.[0]?.message?.content ?? '';
+  const choice  = completion?.choices?.[0] || {};
+  const message = choice.message || {};
+  const reply   = message.content ?? '';
+  const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
   const usage = completion?.usage ?? {};
   const outTokens = Number(usage.completion_tokens) || Math.ceil(reply.length / 2);
   const inTokens = Number(usage.prompt_tokens) || estIn;
@@ -183,6 +192,7 @@ serve(async (req) => {
 
   return jsonResponse({
     reply,
+    tool_calls: toolCalls,
     usage: { prompt_tokens: inTokens, completion_tokens: outTokens, total_tokens: inTokens + outTokens, credits_used: realCredits },
     credits_remaining: cred.credits_remaining,
     credits_total:     cred.credits_total,

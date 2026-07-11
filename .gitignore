@@ -47,3 +47,5 @@ logs/
 # --- WorkBuddy project internals ------------------------------------
 .workbuddy/memory/*.md
 !/.workbuddy/memory/.gitkeep
+
+.vercel

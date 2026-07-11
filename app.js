@@ -1082,16 +1082,29 @@ async function onSendEmail() {
         });
         if (r.ok) {
           const data = await r.json();
-          if (data.action_link) {
-            // Navigate the browser to the magic link so Supabase JS reads the
-            // access_token fragment and creates the session.
-            location.href = data.action_link;
-            return;
+          if (data.access_token && data.refresh_token) {
+            // Hand the tokens directly to the Supabase client. No redirect,
+            // no origin issues — the client establishes the session right here.
+            const { data: sess, error: setErr } = await sb.auth.setSession({
+              access_token: data.access_token,
+              refresh_token: data.refresh_token
+            });
+            if (setErr) throw setErr;
+            if (sess && sess.user) {
+              toast(isZh ? '开发模式登录成功' : 'Dev sign-in successful', true);
+              // finishSignIn will be triggered by onAuthStateChange(SIGNED_IN).
+              return;
+            }
           }
         }
+        // dev-signin returned a payload we didn't expect — log it for debugging.
+        let raw = '';
+        try { raw = (await r.clone().text()).substring(0, 200); } catch {}
+        console.warn('[dev-signin] unexpected response', r.status, raw);
         // dev-signin not configured — fall back to fake-user dev mode.
         toast((isZh?'已开启开发模式（点击「登录」直接进入）':'Dev mode enabled (click Sign In to proceed without email)'), true);
-      } catch(_) {
+      } catch(e) {
+        console.warn('[dev-signin] fetch error', e);
         toast((isZh?'已开启开发模式（点击「登录」直接进入）':'Dev mode enabled (click Sign In to proceed without email)'), true);
       }
     } else {

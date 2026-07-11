@@ -953,19 +953,24 @@ function renderAuth(root) {
           <div class="text-soft" id="resendWrap" style="font-size:.95rem">${t('authResendIn')} <span id="resendSec">60</span>s</div>
         </div>
       `) : pwdMode ? `
-        <div style="width:100%">
+        <div style="width:100%;text-align:left">
+          <h3 style="margin:0 0 6px;text-align:center">${renderAuth._pwdMode === 'up' ? (isZh?'创建账户':'Create Account') : (isZh?'登录账户':'Sign In')}</h3>
+          <p class="text-soft" style="margin:0 0 18px;text-align:center;font-size:.9rem">${renderAuth._pwdMode === 'up' ? (isZh?'使用邮箱 + 密码，1 秒开始':'Set a password — no email verification needed') : (isZh?'欢迎回来':'Welcome back')}</p>
           <label class="field-label">${isZh?'邮箱地址':'Email address'}</label>
-          <input id="pwdEmail" type="email" autocomplete="email" style="font-size:1.2rem" placeholder="you@example.com">
+          <input id="pwdEmail" type="email" autocomplete="email" style="font-size:1.1rem;padding:14px 16px" placeholder="you@example.com">
           <div style="height:14px"></div>
           <label class="field-label">${isZh?'密码（至少 6 位）':'Password (6+ characters)'}</label>
-          <input id="pwdInput" type="password" autocomplete="${renderAuth._pwdMode==='up'?'new-password':'current-password'}" style="font-size:1.2rem" placeholder="••••••••">
-          <p class="text-soft" style="margin-top:8px;font-size:.82rem">${isZh?'首次使用请直接设置密码（无需邮箱验证）':'New here? Just set a password — no email verification needed.'}</p>
-          <div style="height:16px"></div>
-          <button class="big-btn primary" id="pwdSubmitBtn">${renderAuth._pwdMode==='up' ? (isZh?'注册并登录':'Sign Up & Sign In') : (isZh?'登录':'Sign In')}</button>
+          <input id="pwdInput" type="password" autocomplete="${renderAuth._pwdMode==='up'?'new-password':'current-password'}" style="font-size:1.1rem;padding:14px 16px;letter-spacing:2px" placeholder="${renderAuth._pwdMode==='up' ? (isZh?'设置一个密码（≥6位）':'Set a password (6+ chars)') : (isZh?'输入密码':'Enter password')}">
+          <div style="height:20px"></div>
+          <button class="big-btn primary" id="pwdSignUpBtn" style="width:100%;min-width:0;background:linear-gradient(135deg,var(--primary),var(--cta));color:#fff;font-weight:700;font-size:1.05rem">${isZh?'注册 / Sign Up':'Sign Up'}</button>
           <div style="height:10px"></div>
-          <button class="big-btn ghost" id="pwdToggleBtn" style="width:100%;min-width:0;background:transparent;border:0">${renderAuth._pwdMode==='up' ? (isZh?'已有账户？登录':'Have an account? Sign In') : (isZh?'没有账户？注册':'No account? Sign Up')}</button>
+          <button class="big-btn ghost" id="pwdSignInBtn" style="width:100%;min-width:0;border:1px solid var(--border-app);background:var(--bg);font-weight:600;font-size:1rem">${isZh?'登录 / Sign In':'Sign In'}</button>
           <div style="height:14px"></div>
-          <p class="text-soft" style="font-size:.78rem;line-height:1.5">${isZh?'说明：密码存储于 Supabase Auth，未加密仅经散列处理（bcrypt）。请勿在公共设备上保存。':'Note: passwords are stored hashed in Supabase Auth. Do not save on shared devices.'}</p>
+          <div style="text-align:center;font-size:.88rem;color:var(--text-soft,#666)">
+            <span id="pwdToggleLink" style="cursor:pointer;text-decoration:underline;color:var(--primary)">${renderAuth._pwdMode === 'up' ? (isZh?'已有账户？直接登录':'Already have an account? Sign In') : (isZh?'还没账户？立即注册（无需邮箱验证）':'New here? Create an account (no email verify)')}</span>
+          </div>
+          <div style="height:8px"></div>
+          <p class="text-soft" style="font-size:.74rem;line-height:1.5;text-align:center;margin:0">${isZh?'密码经 Supabase Auth 散列存储（bcrypt）。':'Passwords are stored hashed (bcrypt) by Supabase Auth.'}</p>
         </div>
       ` : (tab === 'phone' ? `
         <div style="width:100%">
@@ -997,15 +1002,22 @@ function renderAuth(root) {
   const tabPwd = document.getElementById('tabPwd');
   if (tabPhone) tabPhone.onclick = () => { renderAuth._tab = 'phone'; renderAuth._screen = 'input'; render(); };
   if (tabEmail) tabEmail.onclick = () => { renderAuth._tab = 'email'; renderAuth._screen = 'input'; render(); };
-  if (tabPwd) tabPwd.onclick = () => { renderAuth._tab = 'pwd'; renderAuth._screen = 'input'; renderAuth._pwdMode = 'up'; render(); };
+  if (tabPwd) tabPwd.onclick = () => {
+    renderAuth._tab = 'pwd';
+    renderAuth._screen = 'pwd';
+    if (!renderAuth._pwdMode) renderAuth._pwdMode = 'in'; // default to Sign In
+    render();
+  };
 
   if (otpMode) {
     document.getElementById('verifyBtn').onclick = onVerifyOtp;
   } else if (pwdMode) {
-    const submit = document.getElementById('pwdSubmitBtn');
-    const toggle = document.getElementById('pwdToggleBtn');
-    if (submit) submit.onclick = onPwdSubmit;
-    if (toggle) toggle.onclick = () => {
+    const signup = document.getElementById('pwdSignUpBtn');
+    const signin = document.getElementById('pwdSignInBtn');
+    const link = document.getElementById('pwdToggleLink');
+    if (signup) signup.onclick = () => { renderAuth._pwdMode = 'up'; onPwdSubmit('up'); };
+    if (signin) signin.onclick = () => { renderAuth._pwdMode = 'in'; onPwdSubmit('in'); };
+    if (link) link.onclick = () => {
       renderAuth._pwdMode = renderAuth._pwdMode === 'up' ? 'in' : 'up';
       render();
     };
@@ -1142,7 +1154,7 @@ async function onSendEmail() {
   }
 }
 
-async function onPwdSubmit() {
+async function onPwdSubmit(forceMode) {
   const isZh = state.lang === 'zh';
   if (!sb) return toast(isZh ? '请先初始化 Supabase 客户端' : 'Supabase client not ready', true);
   const emailEl = document.getElementById('pwdEmail');
@@ -1151,39 +1163,51 @@ async function onPwdSubmit() {
   const password = pwdEl?.value || '';
   if (!/^[^@]+@[^@]+\.[^@]+$/.test(email)) return toast(isZh ? '请输入有效的邮箱' : 'Enter a valid email', true);
   if (password.length < 6) return toast(isZh ? '密码至少 6 位' : 'Password must be 6+ characters', true);
-  const btn = document.getElementById('pwdSubmitBtn');
+
+  // Determine which button was clicked (or use forced mode)
+  const mode = forceMode || (renderAuth._pwdMode === 'up' ? 'up' : 'in');
+  const btnId = mode === 'up' ? 'pwdSignUpBtn' : 'pwdSignInBtn';
+  const btn = document.getElementById(btnId);
   if (btn) { btn.disabled = true; btn.dataset._oldText = btn.textContent; btn.textContent = isZh ? '处理中…' : 'Working…'; }
+
   try {
-    let error;
-    const mode = renderAuth._pwdMode === 'in' ? 'signin' : 'signup';
-    if (mode === 'signup') {
-      ({ error } = await sb.auth.signUp({ email, password }));
+    let data, error;
+    if (mode === 'up') {
+      // Sign up — autoconfirm is on, returns access+refresh tokens immediately.
+      ({ data, error } = await sb.auth.signUp({ email, password }));
     } else {
-      const r = await sb.auth.signInWithPassword({ email, password });
-      error = r.error;
-      // If sign-in fails with "Invalid login credentials", auto-flip to sign-up
-      // so a brand new user doesn't have to guess which mode they're in.
-      if (error && /invalid.*credential|invalid.*login/i.test(error.message || '')) {
-        const up = await sb.auth.signUp({ email, password });
-        if (up.error) throw up.error;
-        // success: onAuthStateChange will fire SIGNED_IN
-        return;
-      }
+      // Sign in
+      ({ data, error } = await sb.auth.signInWithPassword({ email, password }));
     }
+
     if (error) {
-      // Edge case: autoconfirm was off and signup needs email verify.
+      // Helpful hints for common cases.
       const msg = (error.message || '').toLowerCase();
-      if (mode === 'signup' && /confirm|verify|email not confirmed|verification/i.test(msg)) {
-        toast(isZh ? '账户已创建，但 Supabase 要求邮箱验证 — 请联系管理员开启 mailer_autoconfirm' : 'Account created, but Supabase requires email verification — ask admin to enable mailer_autoconfirm', true);
-        return;
+      if (mode === 'in' && /invalid.*credential|invalid.*login/i.test(msg)) {
+        // User clicked Sign In but account doesn't exist — offer to create one.
+        toast(isZh
+          ? '该邮箱尚未注册。点击「注册」创建账户。'
+          : 'No account with that email. Tap "Sign Up" to create one.', true);
+      } else if (mode === 'up' && /already.*registered|user.*exists|email.*taken/i.test(msg)) {
+        // User clicked Sign Up but account exists.
+        toast(isZh
+          ? '该邮箱已注册。请点击「登录」使用该密码登录。'
+          : 'That email is already registered. Tap "Sign In" to log in.', true);
+      } else if (mode === 'up' && /confirm|verify|email not confirmed|verification/i.test(msg)) {
+        toast(isZh
+          ? 'Supabase 要求邮箱验证 — 请在控制台开启 mailer_autoconfirm=true'
+          : 'Supabase requires email verification — ask admin to enable mailer_autoconfirm=true', true);
+      } else {
+        toast((isZh ? '失败：' : 'Failed: ') + (error.message || error), true);
       }
-      throw error;
+      return;
     }
-    // success — onAuthStateChange will fire SIGNED_IN.
+    // success — onAuthStateChange(SIGNED_IN) will route to role gate / wizard.
+    // No toast needed; the welcome toast fires from finishSignIn.
   } catch(e) {
     toast((isZh ? '失败：' : 'Failed: ') + (e.message || e), true);
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = btn.dataset._oldText || (isZh ? '登录' : 'Sign In'); }
+    if (btn) { btn.disabled = false; btn.textContent = btn.dataset._oldText || (mode === 'up' ? (isZh?'注册':'Sign Up') : (isZh?'登录':'Sign In')); }
   }
 }
 

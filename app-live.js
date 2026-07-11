@@ -458,88 +458,91 @@ async function wikiImageFor(keyword) {
 // =====================================================================
 // GoldenAge AI — LLM Service
 // =====================================================================
-// Pluggable LLM client. Defaults to a no-op (returns null) until the user
-// enters an API key via Settings. Supports three providers reachable from
-// inside China: DeepSeek, Zhipu GLM, and Aliyun Qwen (DashScope).
-// All three use the OpenAI-compatible Chat Completions shape.
+// Server-side LLM proxy. The app no longer calls an LLM provider
+// directly — it calls our Supabase Edge Function `llm-chat`, which
+// holds the SiliconFlow API key, enforces a per-user daily credits
+// system (ai_credits table), and forwards to the model. The user does
+// not configure any key; the only knobs they see are credit
+// balance + the model answer itself.
+// =====================================================================
 
-const LLM_PROVIDERS = {
-  deepseek: {
-    name: 'DeepSeek',
-    url: 'https://api.deepseek.com/v1/chat/completions',
-    model: 'deepseek-chat',
-    keyHint: 'https://platform.deepseek.com/api_keys',
-  },
-  zhipu: {
-    name: 'Zhipu GLM (智谱)',
-    url: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
-    model: 'glm-4-flash',
-    keyHint: 'https://open.bigmodel.cn/usercenter/apikeys',
-  },
-  qwen: {
-    name: 'Aliyun Qwen (通义千问)',
-    url: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
-    model: 'qwen-turbo',
-    keyHint: 'https://dashscope.console.aliyun.com/apiKey',
-  },
-  // OpenAI is reachable outside China
-  openai: {
-    name: 'OpenAI',
-    url: 'https://api.openai.com/v1/chat/completions',
-    model: 'gpt-4o-mini',
-    keyHint: 'https://platform.openai.com/api-keys',
-  },
-};
+const SB_URL = 'https://exvlolipycabnqiaptib.supabase.co';
 
-function llmGetConfig() {
+// Returns the user's current timezone offset in minutes (e.g. +08:00 = 480).
+function getTzOffsetMinutes() {
+  try { return -new Date().getTimezoneOffset(); } catch { return 480; }
+}
+
+// Returns {ok, credits_remaining, credits_total, reset_at, new_account?}
+// Calls the ai_credits_read RPC via Supabase REST.
+async function llmReadCredits() {
   try {
-    const provider = localStorage.getItem('llm_provider') || 'deepseek';
-    const key = localStorage.getItem('llm_api_key') || '';
-    return { provider, key, ...(LLM_PROVIDERS[provider] || LLM_PROVIDERS.deepseek) };
-  } catch (_) {
-    return { provider: 'deepseek', key: '', ...LLM_PROVIDERS.deepseek };
+    const sess = await window.sb?.auth?.getSession?.();
+    if (!sess?.data?.session) return { ok: false, error: 'no_session' };
+    const accessToken = sess.data.session.access_token;
+    const r = await fetch(SB_URL + '/rest/v1/rpc/ai_credits_read', {
+      method: 'POST',
+      headers: { 'apikey': window.sb.supabaseKey || '', 'authorization': 'Bearer ' + accessToken, 'content-type': 'application/json' },
+      body: JSON.stringify({ p_user_id: null })
+    });
+    return await r.json();
+  } catch (e) {
+    return { ok: false, error: (e.message || String(e)) };
   }
 }
 
-function llmSetConfig(provider, key) {
-  try {
-    if (provider) localStorage.setItem('llm_provider', provider);
-    if (key != null) localStorage.setItem('llm_api_key', key);
-  } catch (_) {}
-}
-
-// OpenAI-compatible chat completion. Returns the assistant's text content,
-// or null on error / when no key is configured.
+// OpenAI-compatible chat completion. Returns
+//   { text, raw }            — success
+//   { error, ... }          — failure (with reason)
+//   { error: 'insufficient_credits', credits_remaining, credits_total, reset_at }
+//   { error: 'auth' }        — not signed in
+//   { error: 'llm_not_configured' } — server has no key (only happens in misconfig)
 async function llmChat(messages, opts = {}) {
-  const cfg = llmGetConfig();
-  if (!cfg.key) return null;
-  const body = {
-    model: cfg.model,
-    messages: messages,
-    temperature: opts.temperature || 0.6,
-    max_tokens: opts.max_tokens || 600,
-    stream: false,
-  };
   try {
-    const res = await fetch(cfg.url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${cfg.key}`,
-      },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const txt = await res.text().catch(() => '');
-      return { error: `HTTP ${res.status}: ${txt.slice(0, 200)}` };
+    const sess = await window.sb?.auth?.getSession?.();
+    if (!sess?.data?.session) {
+      return { error: 'auth' };
     }
-    const d = await res.json();
-    const text = d.choices?.[0]?.message?.content || d.choices?.[0]?.text || '';
-    return { text, raw: d };
+    const accessToken = sess.data.session.access_token;
+    const r = await fetch(SB_URL + '/functions/v1/llm-chat', {
+      method: 'POST',
+      headers: { 'apikey': window.sb.supabaseKey || '', 'authorization': 'Bearer ' + accessToken, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        messages,
+        temperature: opts.temperature || 0.6,
+        max_tokens:   opts.max_tokens   || 600,
+        tz_offset_minutes: getTzOffsetMinutes()
+      })
+    });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      return {
+        error: body.error || `HTTP ${r.status}`,
+        detail: body.detail,
+        credits_remaining: body.credits_remaining,
+        credits_total:     body.credits_total,
+        reset_at:          body.reset_at
+      };
+    }
+    return {
+      text: body.reply || '',
+      raw: body,
+      usage: body.usage,
+      credits_remaining: body.credits_remaining,
+      credits_total:     body.credits_total,
+      reset_at:          body.reset_at
+    };
   } catch (e) {
     return { error: (e && e.message) || String(e) };
   }
 }
+
+// Backwards-compat shims (callers may still call these; they're harmless
+// no-ops now since the server manages everything).
+function llmGetConfig() { return { provider: 'server', key: '(server-managed)' }; }
+function llmSetConfig(_p, _k) { /* no-op: server-side */ }
+// Empty providers map kept for legacy callers that introspect it.
+const LLM_PROVIDERS = { server: { name: 'Server (SiliconFlow Qwen3-8B)', keyHint: 'configured in Supabase secrets' } };
 // ---------- EXPORT ----------
 window.LiveData = {
   fetchQuotes,
@@ -552,6 +555,7 @@ window.LiveData = {
   llmGetConfig,
   llmSetConfig,
   LLM_PROVIDERS,
+  llmReadCredits,
   getMapConfig,
   setMapConfig,
   FINANCE_SYMBOLS,

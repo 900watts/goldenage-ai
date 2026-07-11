@@ -225,6 +225,7 @@ function initSupabase() {
     sb = window.supabase.createClient(SB_URL, SB_ANON, {
       auth: { persistSession: true, autoRefreshToken: true }
     });
+    sb.supabaseKey = SB_ANON; // expose anon key for LiveData fetch wrappers
     // Check existing session
     sb.auth.getSession().then(({ data }) => {
       if (data.session) {
@@ -666,31 +667,44 @@ async function aiChat(userText) {
   const quick = localQuickReply(userText);
   if (quick) return { reply: quick };
 
-  // 4) Real LLM call. Uses the configured provider (DeepSeek by default).
+  // 4) Real LLM call. Server-side: the browser calls our Supabase Edge
+  //    Function which holds the SiliconFlow key and enforces the credits
+  //    system. We no longer need a user-configured key.
   if (window.LiveData && window.LiveData.llmChat) {
-    const cfg = window.LiveData.llmGetConfig();
-    if (cfg.key) {
-      const systemPrompt = buildLlmSystemPrompt();
-      const messages = [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userText },
-      ];
-      try {
-        const r = await window.LiveData.llmChat(messages, { temperature: 0.65, max_tokens: 500 });
-        if (r && r.text) return { reply: r.text.trim(), tool: '🤖 ' + cfg.name };
-        if (r && r.error) {
-          return { reply: (state.lang==='zh'?'（AI 服务暂时出错）：':'AI error: ') + r.error, tool: '⚠️ ' + cfg.name };
-        }
-      } catch (e) {
-        return { reply: (state.lang==='zh'?'（AI 服务异常）：':'AI error: ') + (e.message||e), tool: '⚠️' };
+    const systemPrompt = buildLlmSystemPrompt();
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userText },
+    ];
+    try {
+      const r = await window.LiveData.llmChat(messages, { temperature: 0.65, max_tokens: 500 });
+      if (r && r.text) {
+        // Update the credits indicator in the Me card (if it's open).
+        const remEl = document.getElementById('aiCreditsRemaining');
+        if (remEl && r.credits_remaining != null) remEl.textContent = r.credits_remaining;
+        return { reply: r.text.trim(), tool: '🤖 Qwen3-8B' };
       }
+      if (r && r.error) {
+        if (r.error === 'insufficient_credits') {
+          return { reply: state.lang==='zh'
+            ? `今日 AI 信用已用完（剩余 ${r.credits_remaining} / ${r.credits_total}）。明天 00:00 自动补满。`
+            : `Out of daily AI credits (${r.credits_remaining} / ${r.credits_total}). Refills at 00:00 local time.`,
+            tool: '⏳' };
+        }
+        if (r.error === 'auth') {
+          return { reply: state.lang==='zh' ? '请先登录后再试。' : 'Please sign in first.', tool: '🔒' };
+        }
+        return { reply: (state.lang==='zh'?'（AI 服务暂时出错）：':'AI error: ') + (r.error + (r.detail ? ': ' + (typeof r.detail==='string' ? r.detail : JSON.stringify(r.detail).substring(0,200)) : '')), tool: '⚠️' };
+      }
+    } catch (e) {
+      return { reply: (state.lang==='zh'?'（AI 服务异常）：':'AI error: ') + (e.message||e), tool: '⚠️' };
     }
   }
 
-  // 5) No key configured — return a kind nudge that points the user to Settings.
+  // 5) No LiveData (e.g. CDN failed) — soft fallback.
   return { reply: state.lang==='zh'
-    ? '我还没有连接 AI 服务。请在「我的 → AI 助手设置」中填写 API Key，即可获得智能回复。\n现在我可以帮您：打开地图 / 打开新闻 / 朗读今日金价 / 设置用药提醒。'
-    : "I haven't been connected to an AI service yet. Please open Profile → AI Assistant settings to add an API key.\nIn the meantime, I can open the map, open news, read today's gold price, or set medication reminders.",
+    ? 'AI 助手暂时不可用。我可以帮您：打开地图 / 打开新闻 / 朗读今日金价 / 设置用药提醒。'
+    : "The AI assistant is temporarily unavailable. In the meantime, I can open the map, open news, read today's gold price, or set medication reminders.",
     tool: '⚙️'
   };
 }
@@ -2665,24 +2679,22 @@ async function renderMe(root) {
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
         <div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,var(--primary),var(--cta));color:#fff;display:flex;align-items:center;justify-content:center">${ICON.ai||'🤖'}</div>
         <div style="flex:1">
-          <div style="font-weight:600">${t('meAiStatus')}: <span id="aiStatusText" style="color:${(window.LiveData&&window.LiveData.llmGetConfig().key)?'var(--safe)':'var(--muted)'}">${(window.LiveData&&window.LiveData.llmGetConfig().key)?t('meAiStatusOn'):t('meAiStatusOff')}</span></div>
-          <div class="card-sub" id="aiProviderLabel">${(()=>{try{const p=window.LiveData?window.LiveData.llmGetConfig().provider:'deepseek';return (window.LiveData&&window.LiveData.LLM_PROVIDERS[p]&&window.LiveData.LLM_PROVIDERS[p].name)||p;}catch(_){return 'DeepSeek';}})()}</div>
+          <div style="font-weight:600">${state.lang==='zh'?'AI 助手':'AI Assistant'} · <span style="color:var(--muted);font-weight:500">Qwen3-8B · SiliconFlow</span></div>
+          <div class="card-sub">${state.lang==='zh'?'已配置，密钥由服务器管理':'Configured — API key managed on the server'}</div>
         </div>
       </div>
-      <label class="field-label">${t('meAiProvider')}</label>
-      <select id="aiProvider" style="font-size:1.05rem;padding:10px;border-radius:10px;border:1px solid var(--border-app);width:100%;background:#fff;margin-bottom:12px">
-        <option value="deepseek">DeepSeek (国内可用)</option>
-        <option value="zhipu">Zhipu GLM (智谱，国内)</option>
-        <option value="qwen">Aliyun Qwen (通义千问，国内)</option>
-        <option value="openai">OpenAI (海外)</option>
-      </select>
-      <label class="field-label">${t('meAiKey')}</label>
-      <input id="aiApiKey" type="password" style="font-size:1.05rem;padding:10px;border-radius:10px;border:1px solid var(--border-app);width:100%" placeholder="${t('meAiKeyPh')}" autocomplete="off">
-      <p class="text-soft" style="font-size:.8rem;margin-top:8px">${t('meAiNote')}</p>
-      <div style="display:flex;gap:8px;margin-top:12px">
-        <button class="big-btn primary" id="aiSaveBtn" style="flex:1;min-width:0">${t('meAiSave')}</button>
-        <button class="big-btn ghost" id="aiClearBtn" style="width:auto;min-width:96px">${t('meAiClear')}</button>
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--bg);border-radius:12px;border:1px solid var(--border-app)">
+        <div style="flex:1">
+          <div style="font-size:.85rem;color:var(--muted);margin-bottom:2px">${state.lang==='zh'?'今日剩余信用':'Daily credits remaining'}</div>
+          <div style="font-size:1.6rem;font-weight:700;line-height:1.1">
+            <span id="aiCreditsRemaining">—</span>
+            <span style="font-size:1rem;color:var(--muted);font-weight:500"> / <span id="aiCreditsTotal">50</span></span>
+          </div>
+          <div id="aiCreditsReset" style="font-size:.75rem;color:var(--muted);margin-top:2px">${state.lang==='zh'?'每日 00:00 重置':'Resets at 00:00 local time'}</div>
+        </div>
+        <button class="big-btn ghost" id="aiCreditsRefresh" style="width:auto;min-width:0;padding:8px 14px;font-size:.85rem">${state.lang==='zh'?'刷新':'Refresh'}</button>
       </div>
+      <p class="text-soft" style="font-size:.78rem;margin-top:10px;line-height:1.5">${state.lang==='zh'?'每条 AI 消息按输出 token 消耗信用（1 信用 ≈ 200 token）。每日 00:00 自动补满。':'Each AI message consumes credits based on output tokens (1 credit ≈ 200 tokens). Refills daily at 00:00 local time.'}</p>
     </div>
 
     <h3 style="font-size:1.1rem;margin:0 0 8px">${t('meLang')}</h3>
@@ -2710,37 +2722,33 @@ async function renderMe(root) {
     state.lang = state.lang === 'zh' ? 'en' : 'zh'; applyState();
     if (sbReady()) await sb.from('user_preferences').update({ language: state.lang }).eq('user_id', sbUser.id).catch(()=>{});
   };
-  // AI settings card
-  const aiProvider = document.getElementById('aiProvider');
-  const aiKeyInput = document.getElementById('aiApiKey');
-  if (aiProvider) {
-    try {
-      const cur = (window.LiveData && window.LiveData.llmGetConfig()) || {};
-      if (cur.provider) aiProvider.value = cur.provider;
-      if (cur.key) aiKeyInput.value = cur.key;
-    } catch(_) {}
-    aiProvider.onchange = () => {
-      if (!window.LiveData) return;
-      const cfg = window.LiveData.llmGetConfig();
-      window.LiveData.llmSetConfig(aiProvider.value, cfg.key);
-      toast(state.lang==='zh'?'已切换到 '+aiProvider.value:'Switched to '+aiProvider.value);
-    };
+  // AI credits card: read-only display, refreshed on demand.
+  async function refreshCredits() {
+    const remainingEl = document.getElementById('aiCreditsRemaining');
+    const totalEl    = document.getElementById('aiCreditsTotal');
+    const resetEl    = document.getElementById('aiCreditsReset');
+    if (remainingEl) remainingEl.textContent = '…';
+    if (!window.LiveData || !window.LiveData.llmReadCredits) {
+      if (remainingEl) remainingEl.textContent = '—';
+      return;
+    }
+    const r = await window.LiveData.llmReadCredits();
+    if (r && r.ok) {
+      if (remainingEl) remainingEl.textContent = r.credits_remaining;
+      if (totalEl)    totalEl.textContent     = r.credits_total || 50;
+      if (resetEl && r.reset_at) {
+        const d = new Date(r.reset_at);
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mm = String(d.getMinutes()).padStart(2, '0');
+        resetEl.textContent = (state.lang==='zh' ? '下次重置：明天 ' : 'Resets: tomorrow ') + hh + ':' + mm;
+      }
+    } else {
+      if (remainingEl) remainingEl.textContent = '—';
+    }
   }
-  const aiSave = document.getElementById('aiSaveBtn');
-  if (aiSave) aiSave.onclick = () => {
-    if (!window.LiveData) return;
-    window.LiveData.llmSetConfig(aiProvider.value, aiKeyInput.value.trim());
-    toast(state.lang==='zh'?'已保存。下次打开 AI 助手即可生效':'Saved. AI assistant will use it on next message.');
-    render();
-  };
-  const aiClear = document.getElementById('aiClearBtn');
-  if (aiClear) aiClear.onclick = () => {
-    if (!window.LiveData) return;
-    window.LiveData.llmSetConfig(null, '');
-    aiKeyInput.value = '';
-    toast(state.lang==='zh'?'已清除':'Cleared');
-    render();
-  };
+  const refreshBtn = document.getElementById('aiCreditsRefresh');
+  if (refreshBtn) refreshBtn.onclick = refreshCredits;
+  refreshCredits();
   // Amap key is pre-set in app-live.js (AMAP_WEB_KEY constant). No user input
   // needed. Keeping getMapConfig/setMapConfig for compatibility.
   const copyAcct = document.getElementById('copyAcctId');

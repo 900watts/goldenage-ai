@@ -1432,8 +1432,13 @@ function renderAuthSetup(root, isZh) {
         ${w.step>0 ? `<button class="big-btn ghost" id="wizBack" style="flex:1">${t('setupBack')}</button>`:''}
         <button class="big-btn primary" id="wizNext" style="flex:2">${w.step===total-1?t('setupDone'):t('setupNext')}</button>
       </div>
+      ${w.step===total-1 ? `
       <div style="height:10px"></div>
-      <button class="big-btn ghost" id="wizSkip" style="width:100%;min-width:0;background:transparent;border:0;color:var(--muted)">${t('setupSkip')}</button>
+      <button class="big-btn ghost" id="wizSkipGuardian" style="width:100%;min-width:0;background:transparent;border:1px dashed var(--border-app);color:var(--muted);padding:12px">
+        ${isZh?'暂不填写守护人（稍后可在「我」页面添加）':'Skip guardian for now (add later in Me)'}
+      </button>` : `
+      <div style="height:10px"></div>
+      <button class="big-btn ghost" id="wizSkip" style="width:100%;min-width:0;background:transparent;border:0;color:var(--muted)">${t('setupSkip')}</button>`}
     </div>`;
 
   document.getElementById('wizClose').onclick = () => {
@@ -1447,7 +1452,22 @@ function renderAuthSetup(root, isZh) {
   document.getElementById('wizNext').onclick = () => wizardAdvance(root, isZh);
   const back = document.getElementById('wizBack');
   if (back) back.onclick = () => { wizardCollect(w); w.step--; renderAuthSetup(root, isZh); };
-  document.getElementById('wizSkip').onclick = () => wizardFinish(root, isZh, true);
+  // "Skip guardian for now" — same as the global skip but labeled for the
+  // step so the user knows what they're skipping. Sets setup_complete=true
+  // and leaves guardian_* fields null. They can add a guardian later from
+  // the Me screen (Me → Account & Pairing).
+  const skipGuardian = document.getElementById('wizSkipGuardian');
+  if (skipGuardian) {
+    skipGuardian.onclick = () => {
+      wizardCollect(w);
+      w.data.guardian_name = w.data.guardian_name || null;
+      w.data.guardian_relationship = w.data.guardian_relationship || null;
+      w.data.guardian_phone = w.data.guardian_phone || null;
+      wizardFinish(root, isZh, true);
+    };
+  } else {
+    document.getElementById('wizSkip').onclick = () => wizardFinish(root, isZh, true);
+  }
   // Step-internal event bindings
   if (w.step === 1) bindWizardStep2();
 }

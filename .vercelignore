@@ -1,0 +1,33 @@
+# Exclude non-web files from Vercel deployment
+# Only the static web app (index.html, app.html, app.js, app-live.js, assets/) is deployed
+
+# WorkBuddy project metadata
+.workbuddy/
+
+# Capacitor / Android wrapper (not needed on web)
+mobile/
+
+# Supabase migrations & edge functions (server-side, not web)
+supabase/
+supabase_dashboard/
+
+# Flutter / Dart source (not used by the web app)
+lib/
+test/
+pubspec.yaml
+pubspec.lock
+analysis_options.yaml
+
+# Dev tooling
+bin/
+
+# Docs
+SOUL.md
+README.md
+
+# OS / editor
+.vscode/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db

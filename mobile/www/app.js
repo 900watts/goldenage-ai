@@ -1024,7 +1024,12 @@ async function onSendEmail() {
     // When the user clicks it, the browser comes back to app.html and
     // onAuthStateChange fires SIGNED_IN, which routes them to home or
     // the setup wizard.
-    const redirectTo = window.location.origin + (window.location.pathname || '/app.html');
+    // Always redirect to the site root (which is in Supabase's Redirect-URL
+    // allowlist). The landing page (index.html) detects magic-link tokens in
+    // the URL hash and forwards to app.html, where the Supabase client
+    // processes the session. This avoids requiring app.html to be separately
+    // allowlisted.
+    const redirectTo = window.location.origin + '/';
     const { error } = await sb.auth.signInWithOtp({
       email: v,
       options: { shouldCreateUser: true, emailRedirectTo: redirectTo }
@@ -1068,7 +1073,7 @@ function bindEmailLinkActions() {
       await sb.auth.signInWithOtp({
         email: renderAuth._email,
         options: { shouldCreateUser: true,
-                   emailRedirectTo: window.location.origin + (window.location.pathname || '/app.html') }
+                   emailRedirectTo: window.location.origin + '/' }
       });
       toast(isZh?'已重新发送':'Resent');
     } catch(e) {
@@ -1565,7 +1570,7 @@ function startResendTimer(kind) {
         if (sb) {
           try {
             if (kind === 'email') {
-              await sb.auth.signInWithOtp({ email: renderAuth._email, options: { shouldCreateUser: true } });
+              await sb.auth.signInWithOtp({ email: renderAuth._email, options: { shouldCreateUser: true, emailRedirectTo: window.location.origin + '/' } });
             } else {
               await sb.auth.signInWithOtp({ phone: renderAuth._phone, shouldCreateUser: true });
             }

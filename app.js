@@ -46,6 +46,7 @@ const I18N = {
     scamAdvice: 'AI建议', scamReason: '原因',
     guardTitle: '守护者', guardSub: '配对家人，守护您的安全',
     guardPaired: '已配对', guardNot: '未配对', guardShowQr: '显示配对二维码', guardPairedGuardian: '王小明 · 儿子',
+    guardAddById: '用账户 ID 绑定', guardAddHint: '让长辈在「我」页面 → 「账户与配对」里把账户 ID 复制给你，然后粘贴在这里。', guardIdPlaceholder: '粘贴长辈的账户 ID（例如：a1b2c3d4-…）', guardAddBtn: '绑定', guardNoIdHint: '不知道账户 ID？打开「我」页面，账户 ID 在「账户与配对」卡片里。',
     medTitle: '用药管理', medTaken: '已服药', medSkip: '跳过', medAdd: '添加提醒',
     medTake1: '降压药', medTake1Sub: '08:00 · 20:00 · 饭后服用',
     medTake2: '钙片', medTake2Sub: '12:00 · 随午餐',
@@ -135,6 +136,7 @@ const I18N = {
     scamAdvice: 'AI Advice', scamReason: 'Why',
     guardTitle: 'Guardian', guardSub: 'Pair a family member to keep you safe',
     guardPaired: 'Paired', guardNot: 'Not paired', guardShowQr: 'Show Pairing QR', guardPairedGuardian: 'Xiao Ming · Son',
+    guardAddById: 'Add by Account ID', guardAddHint: 'Ask the elder to open Me → Account & Pairing, then share their Account ID. Paste it here.', guardIdPlaceholder: 'Paste the elder\'s Account ID (e.g. a1b2c3d4-…)', guardAddBtn: 'Pair', guardNoIdHint: 'Don\'t know the Account ID? Open Me to find yours; ask the elder to do the same.',
     medTitle: 'Medication', medTaken: 'Taken', medSkip: 'Skip', medAdd: 'Add Reminder',
     medTake1: 'Blood Pressure Meds', medTake1Sub: '08:00 · 20:00 · with food',
     medTake2: 'Calcium', medTake2Sub: '12:00 · with lunch',
@@ -2468,7 +2470,7 @@ function saveGuardians() { localStorage.setItem('guardians', JSON.stringify(guar
 loadGuardians();
 
 function renderGuardian(root) {
-  const showQr = renderGuardian._qr;
+  const isZh = state.lang === 'zh';
   root.innerHTML = `
     <h2 class="section-title">${t('guardTitle')}</h2>
     <p class="text-soft" style="margin-bottom:20px">${t('guardSub')}</p>
@@ -2481,73 +2483,93 @@ function renderGuardian(root) {
         <div class="card-text">
           <div class="card-title">${state.lang==='zh' ? g.name : (g.nameEn||g.name)}</div>
           <div class="card-sub" style="color:var(--safe);font-weight:600">● ${t('guardPaired')}</div>
+          ${g.elder_id ? `<div class="card-sub" style="font-size:.78rem;color:var(--muted);margin-top:2px;font-family:monospace">${g.elder_id.substring(0, 8)}…${g.elder_id.substring(g.elder_id.length - 4)}</div>` : ''}
         </div>
         <button class="big-btn ghost" data-remove="${i}" style="width:auto;min-width:0;font-size:.85rem;padding:8px 12px;color:var(--danger);border-color:var(--danger)">${ICON.close}</button>
       </div>
     `).join('')}
     </div>
-    <div style="height:20px"></div>
-    <button class="big-btn secondary" id="qrBtn">${ICON.shield}<span>${t('guardShowQr')}</span></button>
-    ${showQr ? (() => {
-      const token = Math.random().toString(36).slice(2, 18);
-      renderGuardian._pendingToken = token;
-      return `
-      <div style="margin-top:24px;text-align:center">
-        <div class="qr-frame">
-          ${fakeQrSvg('goldenage://pair/' + token)}
+    ${guardians.length === 0 ? `
+      <div class="card" style="padding:24px;margin-bottom:18px;background:linear-gradient(135deg,var(--bg),#fff);border:2px solid var(--primary)">
+        <h3 style="margin:0 0 8px;font-size:1.15rem;display:flex;align-items:center;gap:8px">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg>
+          ${t('guardAddById')}
+        </h3>
+        <p class="text-soft" style="font-size:.9rem;margin:0 0 14px;line-height:1.5">${t('guardAddHint')}</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <input id="guardianElderId" type="text" style="flex:1;min-width:240px;font-size:1rem;padding:12px 14px;border-radius:12px;border:1px solid var(--border-app);font-family:monospace" placeholder="${t('guardIdPlaceholder')}">
+          <button class="big-btn primary" id="guardianBindBtn" style="width:auto;min-width:140px;padding:12px 20px">${t('guardAddBtn')}</button>
         </div>
-        <p class="text-soft" style="margin-top:8px">${state.lang==='zh'?'让家人用 GoldenAge 扫描':'Have family scan with GoldenAge'}</p>
-        <p style="font-size:.8rem;color:var(--muted-app);margin-top:4px">Token: ${token}</p>
-        <div style="height:16px"></div>
-        <button class="big-btn primary" id="simulateScan" style="max-width:280px">${state.lang==='zh'?'模拟家人扫描配对':'Simulate family scan & pair'}</button>
-      </div>`;
-    })() : ''}`;
-  document.getElementById('qrBtn').onclick = () => { renderGuardian._qr = true; render(); };
+        <details style="margin-top:14px">
+          <summary style="cursor:pointer;color:var(--muted);font-size:.85rem">${isZh?'不知道账户 ID？':'Don\'t know the Account ID?'}</summary>
+          <p class="text-soft" style="font-size:.85rem;margin:8px 0 0;line-height:1.55">${t('guardNoIdHint')}</p>
+        </details>
+      </div>
+    ` : ''}
+  `;
+  // Bind handler — uses the Supabase RPC pair_with_elder which accepts
+  // either the elder's pairing_code OR their full account id.
+  const bindBtn = document.getElementById('guardianBindBtn');
+  const idInput = document.getElementById('guardianElderId');
+  if (bindBtn && idInput) {
+    const doBind = async () => {
+      const code = (idInput.value || '').trim();
+      if (!code) return toast(isZh ? '请输入账户 ID 或配对码' : 'Enter the Account ID or pairing code', true);
+      if (!sb) return toast(isZh ? '请先登录' : 'Sign in first', true);
+      bindBtn.disabled = true;
+      try {
+        const { data, error } = await sb.rpc('pair_with_elder', { p_code: code });
+        if (error || !data || !data.ok) {
+          const msg = data && data.error === 'self' ? t('pairBindSelf')
+                    : data && data.error === 'not_found' ? t('pairBindFail')
+                    : (error && error.message) || t('pairBindFail');
+          return toast(msg, true);
+        }
+        // Persist the paired elder in the local guardian list so the
+        // Guardian tab updates without a page reload. We show only the
+        // account id prefix; the rest comes from the elder's profile.
+        const elderId = data.elder_id;
+        const placeholderName = isZh ? `长辈（${elderId.substring(0, 8)}…）` : `Elder (${elderId.substring(0, 8)}…)`;
+        guardians.push({
+          name: placeholderName,
+          nameEn: placeholderName,
+          paired: true,
+          token: code,
+          elder_id: elderId
+        });
+        saveGuardians();
+        idInput.value = '';
+        toast(t('pairBindOk'));
+        render();
+      } finally {
+        bindBtn.disabled = false;
+      }
+    };
+    bindBtn.onclick = doBind;
+    idInput.onkeydown = e => { if (e.key === 'Enter') doBind(); };
+  }
+  // Remove handler
   root.querySelectorAll('[data-remove]').forEach(b => b.onclick = async () => {
     const i = +b.dataset.remove;
     const ok = await showDialog({
       title: state.lang==='zh'?'移除守护者':'Remove Guardian',
-      body: state.lang==='zh'?`确认移除 ${guardians[i].name}？`:`Remove ${guardians[i].nameEn||guardians[i].name}?`,
+      body: state.lang==='zh'?`确认移除？`:`Remove this pairing?`,
       confirmLabel: state.lang==='zh'?'移除':'Remove',
       danger: true,
     });
-    if (ok) { guardians.splice(i, 1); saveGuardians(); render(); }
+    if (ok) {
+      // If we have an elder_id, also clear the link in the DB.
+      const g = guardians[i];
+      if (g && g.elder_id && sb) {
+        try {
+          await sb.from('profiles').update({ guardian_account_id: null }).eq('id', g.elder_id);
+        } catch (_) {}
+      }
+      guardians.splice(i, 1);
+      saveGuardians();
+      render();
+    }
   });
-  const simBtn = document.getElementById('simulateScan');
-  if (simBtn) simBtn.onclick = async () => {
-    const name = await promptDialog({
-      title: state.lang==='zh'?'家人姓名':'Family member name',
-      placeholder: state.lang==='zh'?'如：李小华':'e.g. Li Xiaohua',
-    });
-    if (!name) return;
-    guardians.push({ name: name + ' · 家人', nameEn: name + ' · Family', paired: true, token: renderGuardian._pendingToken || 'new' });
-    saveGuardians();
-    renderGuardian._qr = false;
-    toast(state.lang==='zh'?'配对成功！':'Paired!');
-    render();
-  };
-}
-
-function fakeQrSvg(text) {
-  // Generate a deterministic-looking pattern for demo purposes.
-  const cells = 21;
-  let h = 0;
-  for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) | 0;
-  let bits = '';
-  for (let i = 0; i < cells * cells; i++) {
-    h = (h * 1103515245 + 12345) | 0;
-    bits += (h >>> 0) % 2;
-  }
-  let rects = '';
-  for (let y = 0; y < cells; y++) for (let x = 0; x < cells; x++) {
-    if (bits[y*cells+x] === '1') rects += `<rect x="${x}" y="${y}" width="1" height="1" fill="#134E4A"/>`;
-  }
-  // finder patterns
-  const finder = (cx, cy) => `
-    <rect x="${cx}" y="${cy}" width="7" height="7" fill="#134E4A"/>
-    <rect x="${cx+1}" y="${cy+1}" width="5" height="5" fill="#fff"/>
-    <rect x="${cx+2}" y="${cy+2}" width="3" height="3" fill="#134E4A"/>`;
-  return `<svg viewBox="0 0 ${cells} ${cells}" xmlns="http://www.w3.org/2000/svg">${rects}${finder(0,0)}${finder(14,0)}${finder(0,14)}</svg>`;
 }
 
 // --- MEDICATION ---

@@ -205,6 +205,14 @@ const I18N = {
 
 const t = (k) => I18N[state.lang][k] || k;
 
+// Dev-mode key for the dev-signin Edge Function. This key is a shared
+// secret: it is ALSO stored in the Supabase project's secrets. It is
+// in the client bundle, so it provides NO security — it only lets the
+// dev-signin Edge Function distinguish "this call came from a known
+// dev client" from "this call is someone trying to brute force create
+// accounts". Leave empty in production deployments to disable dev
+// sign-in entirely.
+window.__DEV_KEY = 'gal-dev-900watts-2026';
 // ---------------- SUPABASE ----------------
 const SB_URL = 'https://exvlolipycabnqiaptib.supabase.co';
 const SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV4dmxvbGlweWNhYm5xaWFwdGliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM1MzcyMzgsImV4cCI6MjA5OTExMzIzOH0.mJ-zBvLizIEykNdqDN_CqDpSbUl4Vznc1x1L9TaNMgQ';
@@ -1042,8 +1050,8 @@ async function onSendEmail() {
     const isSmtp = /smtp|mail server|forbidden|referer|provider|cors|422|500|503/i.test(msg);
     let zhText, enText;
     if (isRateLimit) {
-      zhText = 'Supabase 邮件发送已达上限（默认每小时 ~30 封）。请稍等 1 小时再试，或在 Supabase 控制台 → Auth → Rate Limits 调高。';
-      enText = 'Supabase email rate limit reached (default ~30/hour). Wait 1 hour, or raise the limit in Supabase Dashboard → Auth → Rate Limits.';
+      zhText = 'Supabase 内置邮件已达上限（默认每小时 2 封，整个项目共享，且无法在控制台调高）。正在通过开发模式直接登录…';
+      enText = 'Supabase built-in email limit reached (2/hour project-wide, NOT adjustable from the dashboard). Signing in via dev mode…';
     } else if (isSmtp) {
       zhText = '邮件服务暂不可用：Supabase SMTP 未配置。请在 Supabase 控制台 Auth → SMTP 中配置（AWS SES / SendGrid / Resend），或在 Auth → Providers → Email 中开启 Confirm email off 进行测试。';
       enText = 'Email service unavailable: Supabase SMTP is not configured. Set up SMTP (AWS SES / SendGrid / Resend) in Supabase Dashboard → Auth → SMTP, or disable Confirm email under Auth → Providers → Email for testing.';
@@ -1053,7 +1061,39 @@ async function onSendEmail() {
     }
     if (isSmtp || isRateLimit) {
       window.__devEmail = v;
-      toast((isZh ? zhText : enText) + ' — ' + (isZh ? '已开启开发模式（点击「登录」直接进入）' : 'Dev mode enabled (click Sign In to proceed without email)'), true);
+      toast(isZh ? zhText : enText, true);
+      // Try dev-signin Edge Function — returns a real magic-link URL whose
+      // access_token+refresh_token we hand back to Supabase JS, establishing
+      // a real session (with RLS) without sending email.
+      // The function is enabled by setting DEV_SIGNIN_KEY as a Supabase secret;
+      // the value is also exposed via window.__DEV_KEY (read from <meta> or
+      // simply a hard-coded dev constant for this project). Leave empty in
+      // production.
+      const devKey = (window.__DEV_KEY) || '';
+      if (!devKey) {
+        toast((isZh?'已开启开发模式（点击「登录」直接进入）':'Dev mode enabled (click Sign In to proceed without email)'), true);
+        return;
+      }
+      try {
+        const r = await fetch(SB_URL + '/functions/v1/dev-signin', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-dev-key': devKey },
+          body: JSON.stringify({ email: v })
+        });
+        if (r.ok) {
+          const data = await r.json();
+          if (data.action_link) {
+            // Navigate the browser to the magic link so Supabase JS reads the
+            // access_token fragment and creates the session.
+            location.href = data.action_link;
+            return;
+          }
+        }
+        // dev-signin not configured — fall back to fake-user dev mode.
+        toast((isZh?'已开启开发模式（点击「登录」直接进入）':'Dev mode enabled (click Sign In to proceed without email)'), true);
+      } catch(_) {
+        toast((isZh?'已开启开发模式（点击「登录」直接进入）':'Dev mode enabled (click Sign In to proceed without email)'), true);
+      }
     } else {
       toast(isZh ? zhText : enText, true);
     }

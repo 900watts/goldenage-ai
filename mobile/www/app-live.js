@@ -464,9 +464,9 @@ async function wikiImageFor(keyword) {
 // system (ai_credits table), and forwards to the model. The user does
 // not configure any key; the only knobs they see are credit
 // balance + the model answer itself.
+//
+// SB_URL is provided as a global by app.js (loaded first).
 // =====================================================================
-
-const SB_URL = 'https://exvlolipycabnqiaptib.supabase.co';
 
 // Returns the user's current timezone offset in minutes (e.g. +08:00 = 480).
 function getTzOffsetMinutes() {

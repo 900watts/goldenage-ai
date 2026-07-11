@@ -1941,27 +1941,13 @@ function renderMap(root) {
     if (!list) return;
     if (status) status.textContent = state.lang==='zh'?'正在获取附近数据…':'Fetching nearby…';
     const items = await window.LiveData.fetchPOIs(renderMap._filter || 'hospital');
-    if (items && items.__needsKey) {
-      list.innerHTML = '<div class="card" style="text-align:center;padding:30px">' +
-        '<div style="font-size:3rem;margin-bottom:12px">🗺️</div>' +
-        '<div style="font-weight:600;margin-bottom:8px">' + (state.lang==='zh'?'配置地图 Key 即可使用':'Add a map key to get started') + '</div>' +
-        '<div style="color:var(--muted);font-size:.9rem;margin-bottom:18px">' +
-          (state.lang==='zh'?'应用默认使用高德地图服务（国内可访问）。请到「我的 → 地图服务」粘贴您的高德 Web 服务 Key，即可查看附近的医院/药店/公园/超市。':'The app uses Amap by default (China-accessible). Open Profile → Map Service to paste your Amap Web Service key, then you\'ll see nearby hospitals/pharmacies/parks/supermarkets here.') +
-        '</div>' +
-        '<button class="big-btn primary" id="gotoMapKey" style="width:auto;min-width:0;padding:12px 24px;display:inline-block">' + (state.lang==='zh'?'立即配置':'Set up now') + '</button>' +
-        '</div>';
-      if (status) status.textContent = state.lang==='zh'?'需要 API Key':'API key required';
-      const goBtn = document.getElementById('gotoMapKey');
-      if (goBtn) goBtn.onclick = () => go('me');
-      return;
-    }
     if (items && items.__error) {
       list.innerHTML = '<div class="card" style="text-align:center;color:var(--warn);padding:30px">' +
         (state.lang==='zh'?'地图服务错误：':'Map service error: ') + escapeHtml(items.__error) +
         '<br><br><span style="color:var(--muted);font-size:.9rem">' +
-        (state.lang==='zh'?'请在「我的 → 地图服务」中配置高德地图 API Key':'Open Profile → Map Service to add an Amap API key') +
+        (state.lang==='zh'?'请稍后重试，或检查网络':'Please try again later, or check your network') +
         '</span></div>';
-      if (status) status.textContent = state.lang==='zh'?'需要 API Key':'API key required';
+      if (status) status.textContent = state.lang==='zh'?'服务异常':'Service error';
       return;
     }
     if (!items || !items.length) {
@@ -2699,17 +2685,6 @@ async function renderMe(root) {
       </div>
     </div>
 
-    <h3 style="font-size:1.1rem;margin:0 0 8px">${state.lang==='zh'?'地图服务':'Map Service'}</h3>
-    <div class="card" style="padding:18px;margin-bottom:18px">
-      <p class="text-soft" style="font-size:.9rem;margin-bottom:10px">${state.lang==='zh'?'默认使用高德地图（国内可访问）。可在 lbs.amap.com 申请免费的 Web 服务 Key。':'Amap (AutoNavi) by default — accessible in China. Get a free Web Service key at lbs.amap.com.'}</p>
-      <label class="field-label">${state.lang==='zh'?'高德地图 API Key':'Amap API Key'}</label>
-      <input id="amapApiKey" type="password" style="font-size:1.05rem;padding:10px;border-radius:10px;border:1px solid var(--border-app);width:100%" placeholder="${state.lang==='zh'?'例如：a1b2c3d4...':'e.g. a1b2c3d4...'}">
-      <div style="display:flex;gap:8px;margin-top:12px">
-        <button class="big-btn primary" id="amapSaveBtn" style="flex:1;min-width:0">${t('meAiSave')}</button>
-        <button class="big-btn ghost" id="amapClearBtn" style="width:auto;min-width:96px">${t('meAiClear')}</button>
-      </div>
-    </div>
-
     <h3 style="font-size:1.1rem;margin:0 0 8px">${t('meLang')}</h3>
     <div class="card" style="padding:18px;display:flex;align-items:center;gap:12px;margin-bottom:24px">
       <div style="width:42px;height:42px;border-radius:12px;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center">${ICON.lang}</div>
@@ -2766,24 +2741,8 @@ async function renderMe(root) {
     toast(state.lang==='zh'?'已清除':'Cleared');
     render();
   };
-  // Amap key
-  const amapInput = document.getElementById('amapApiKey');
-  if (amapInput) {
-    try { const c = window.LiveData ? window.LiveData.getMapConfig() : null; if (c && c.key) amapInput.value = c.key; } catch(_) {}
-  }
-  const amapSave = document.getElementById('amapSaveBtn');
-  if (amapSave) amapSave.onclick = () => {
-    if (!window.LiveData) return;
-    window.LiveData.setMapConfig('amap', amapInput.value.trim());
-    toast(state.lang==='zh'?'已保存。下次打开地图生效':'Saved. Map will use it next time');
-  };
-  const amapClear = document.getElementById('amapClearBtn');
-  if (amapClear) amapClear.onclick = () => {
-    if (!window.LiveData) return;
-    window.LiveData.setMapConfig('amap', '');
-    amapInput.value = '';
-    toast(state.lang==='zh'?'已清除':'Cleared');
-  };
+  // Amap key is pre-set in app-live.js (AMAP_WEB_KEY constant). No user input
+  // needed. Keeping getMapConfig/setMapConfig for compatibility.
   const copyAcct = document.getElementById('copyAcctId');
   if (copyAcct) copyAcct.onclick = () => {
     const id = sbUser?.id || '';

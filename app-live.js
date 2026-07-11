@@ -301,20 +301,18 @@ const POI_QUERIES = {
   supermarket: { amap: '超市',          osm: 'supermarket' },
 };
 
+// ----- AMap (高德地图) Web 服务 key (pre-set, no user config UI) -----
+// These keys are bundled with the app so the user doesn't need to
+// register their own. If they hit a rate limit, rotate from the Amap
+// console and update here.
+const AMAP_WEB_KEY = '2f211c5272eb83e26039981f4d966e05';
+
 function getMapConfig() {
-  try {
-    return {
-      provider: localStorage.getItem('map_provider') || 'amap',
-      key: localStorage.getItem('map_api_key') || '',
-    };
-  } catch (_) { return { provider: 'amap', key: '' }; }
+  return { provider: 'amap', key: AMAP_WEB_KEY };
 }
-function setMapConfig(provider, key) {
-  try {
-    if (provider) localStorage.setItem('map_provider', provider);
-    if (key != null) localStorage.setItem('map_api_key', key);
-  } catch (_) {}
-}
+// setMapConfig is kept as a no-op so existing call-sites don't break,
+// but the user can no longer change the key from the UI.
+function setMapConfig(_provider, _key) { /* no-op: key is pre-set */ }
 
 async function fetchPOIsAmap(kind, lat, lng, key) {
   const cfg = POI_QUERIES[kind] || POI_QUERIES.hospital;
@@ -398,10 +396,6 @@ async function fetchPOIs(kind, lat = 39.9085, lng = 116.3975) {
     if (r && !r.__amapError) return r;
     if (r && r.__amapError) return { __error: r.__amapError };
     // Key set but returned no results — still proceed to Nominatim.
-  } else {
-    // No key yet — surface a clear "needs key" hint so the UI can prompt
-    // the user to go to Settings, instead of showing a generic network error.
-    return { __needsKey: true };
   }
   return await fetchPOIsNominatim(kind, lat, lng);
 }

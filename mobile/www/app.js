@@ -11,7 +11,7 @@
 //    (CN convention: 涨=红, 跌=绿). Tap "问问AI" for an explanation.
 //  - News: see daily digest cards with "朗读" (TTS read-aloud)
 //  - Scam Shield: paste a suspicious message, get a verdict
-//  - Guardian: see paired list + show QR for invite
+//  - Guardian: see paired list + share personalized ID for invite
 //  - Medication: see today's schedule, log "已服药" / "跳过"
 //  - Profile: toggle Big Text Mode, dark mode, language, view profile
 //  - AI Bubble (orange FAB bottom-right): chat with the SOUL.md persona,
@@ -46,7 +46,7 @@ const I18N = {
     scamSafe: '安全', scamCaution: '谨慎', scamDanger: '危险 — 极可能是诈骗',
     scamAdvice: 'AI建议', scamReason: '原因',
     guardTitle: '守护者', guardSub: '配对家人，守护您的安全',
-    guardPaired: '已配对', guardNot: '未配对', guardShowQr: '显示配对二维码', guardPairedGuardian: '王小明 · 儿子',
+    guardPaired: '已配对', guardNot: '未配对', guardShowQr: '显示我的专属 ID', guardPairedGuardian: '王小明 · 儿子',
     guardAddById: '用账户 ID 绑定', guardAddHint: '让长辈在「我」页面 → 「账户与配对」里把账户 ID 复制给你，然后粘贴在这里。', guardIdPlaceholder: '粘贴长辈的账户 ID（例如：a1b2c3d4-…）', guardAddBtn: '绑定', guardNoIdHint: '不知道账户 ID？打开「我」页面，账户 ID 在「账户与配对」卡片里。',
     medTitle: '用药管理', medTaken: '已服药', medSkip: '跳过', medAdd: '添加提醒',
     medTake1: '降压药', medTake1Sub: '08:00 · 20:00 · 饭后服用',
@@ -74,7 +74,7 @@ const I18N = {
     setupTitle: '完善个人资料', setupSub: '为了更好地为您服务，请填写以下信息（姓名必填，其余可选）',
     setupStep1Title: '自我介绍', setupStep1Sub: '请告诉我们您是谁',
     setupStep2Title: '新闻偏好', setupStep2Sub: '选择您感兴趣的新闻主题（可多选）',
-    setupStep3Title: '守护人', setupStep3Sub: '设置一个紧急联系人，他/她会在您需要时收到通知',
+    setupStep3Title: '守护人', setupStep3Sub: '输入对方的账号 ID，发生紧急情况时对方会收到通知',
     setupName: '您的姓名', setupNamePh: '如：王秀英',
     setupPreferredName: '希望智能助手如何称呼您', setupPreferredNamePh: '如：王奶奶',
     setupGender: '性别', setupAge: '年龄',
@@ -82,9 +82,7 @@ const I18N = {
     setupCity: '所在城市', setupCityPh: '如：北京',
     setupBirth: '出生日期',
     setupNewsTopics: '新闻主题',
-    setupGuardianName: '守护人姓名', setupGuardianNamePh: '如：王小明',
-    setupGuardianRel: '关系', setupGuardianPhone: '手机号', setupGuardianPhonePh: '如：138 0000 0000',
-    setupRelSon: '儿子', setupRelDaughter: '女儿', setupRelSpouse: '配偶', setupRelGrandchild: '孙辈', setupRelSibling: '兄弟姐妹', setupRelOther: '其他',
+    setupGuardianId: '守护人账号 ID', setupGuardianIdPh: '输入对方的账号 ID（如 a1b2c3d4-…）',
     setupBack: '上一步', setupNext: '下一步',
     setupDone: '完成',
     setupEditProfile: '重新填写资料',
@@ -138,7 +136,7 @@ const I18N = {
     scamSafe: 'Safe', scamCaution: 'Caution', scamDanger: 'DANGER — Highly Likely a Scam',
     scamAdvice: 'AI Advice', scamReason: 'Why',
     guardTitle: 'Guardian', guardSub: 'Pair a family member to keep you safe',
-    guardPaired: 'Paired', guardNot: 'Not paired', guardShowQr: 'Show Pairing QR', guardPairedGuardian: 'Xiao Ming · Son',
+    guardPaired: 'Paired', guardNot: 'Not paired', guardShowQr: 'Show My Personalized ID', guardPairedGuardian: 'Xiao Ming · Son',
     guardAddById: 'Add by Account ID', guardAddHint: 'Ask the elder to open Me → Account & Pairing, then share their Account ID. Paste it here.', guardIdPlaceholder: 'Paste the elder\'s Account ID (e.g. a1b2c3d4-…)', guardAddBtn: 'Pair', guardNoIdHint: 'Don\'t know the Account ID? Open Me to find yours; ask the elder to do the same.',
     medTitle: 'Medication', medTaken: 'Taken', medSkip: 'Skip', medAdd: 'Add Reminder',
     medTake1: 'Blood Pressure Meds', medTake1Sub: '08:00 · 20:00 · with food',
@@ -166,7 +164,7 @@ const I18N = {
     setupTitle: 'Complete your profile', setupSub: 'To serve you better, please fill in the following. Name is required, the rest are optional.',
     setupStep1Title: 'About you', setupStep1Sub: 'Tell us a bit about yourself',
     setupStep2Title: 'News interests', setupStep2Sub: 'Pick the topics you care about (you can choose more than one)',
-    setupStep3Title: 'Guardian', setupStep3Sub: 'Add someone who will be alerted when you need help',
+    setupStep3Title: 'Guardian', setupStep3Sub: 'Enter their Account ID so they are alerted in an emergency',
     setupName: 'Your name', setupNamePh: 'e.g. Wang Xiuying',
     setupPreferredName: 'What should the assistant call you?', setupPreferredNamePh: 'e.g. Grandma Wang',
     setupGender: 'Gender', setupAge: 'Age',
@@ -174,9 +172,7 @@ const I18N = {
     setupCity: 'City', setupCityPh: 'e.g. Beijing',
     setupBirth: 'Date of birth',
     setupNewsTopics: 'News topics',
-    setupGuardianName: 'Guardian name', setupGuardianNamePh: 'e.g. Wang Xiaoming',
-    setupGuardianRel: 'Relationship', setupGuardianPhone: 'Phone', setupGuardianPhonePh: 'e.g. 138 0000 0000',
-    setupRelSon: 'Son', setupRelDaughter: 'Daughter', setupRelSpouse: 'Spouse', setupRelGrandchild: 'Grandchild', setupRelSibling: 'Sibling', setupRelOther: 'Other',
+    setupGuardianId: 'Guardian Account ID', setupGuardianIdPh: 'Enter their Account ID (e.g. a1b2c3d4-… )',
     setupBack: 'Back', setupNext: 'Next',
     setupDone: 'Finish',
     setupEditProfile: 'Edit profile',
@@ -404,6 +400,7 @@ function initSupabase() {
         state.signedIn = true;
         applyState();
         loadUserPreferences(sbUser.id);
+        try { setupCrisisAlerts(); flushPendingSos(); } catch (_) {}
         attachAuthListener();
       } else if (data.session && forceLogin) {
         // Session exists but the user asked for the login screen — show
@@ -1121,8 +1118,11 @@ async function aiChat(userText) {
             : `Out of daily AI credits (${r.credits_remaining} / ${r.credits_total}). Refills at 00:00 local time.`,
             tool: '⏳' };
         }
-        if (r.error === 'auth') {
-          return { reply: state.lang==='zh' ? '请先登录后再试。' : 'Please sign in first.', tool: '🔒' };
+        if (r.error === 'anon_rate_limited') {
+          return { reply: state.lang==='zh'
+            ? '今日匿名对话次数已用完，登录后可享受无限个性化对话。'
+            : 'Anonymous chat limit reached for today. Sign in for unlimited, personalized chat.',
+            tool: '⏳' };
         }
         return { reply: (state.lang==='zh'?'（AI 服务暂时出错）：':'AI error: ') + (r.error + (r.detail ? ': ' + (typeof r.detail==='string' ? r.detail : JSON.stringify(r.detail).substring(0,200)) : '')), tool: '⚠️' };
       }
@@ -1789,6 +1789,8 @@ async function finishSignIn(user, isZh, fresh = true) {
   // Only show the welcome toast on a real sign-in (not a token refresh).
   if (fresh) toast(isZh ? '登录成功，欢迎！' : 'Welcome!');
   applyState();
+  // Guardian live emergency alerts + retry any unsynced SOS records.
+  try { setupCrisisAlerts(); flushPendingSos(); } catch (_) {}
   // Start the reminder scheduler so due reminders fire a pop-up +
   // browser notification. Safe to call repeatedly — it's idempotent.
   try { startReminderScheduler(); } catch (_) {}
@@ -1811,13 +1813,10 @@ function wizardInitFromProfile(u) {
       city: p.city || '',
       birth_date: p.birth_date || '',
       news_topics: Array.isArray(p.news_topics) ? [...p.news_topics] : [],
-      guardian_name: p.guardian_name || '',
-      guardian_relationship: p.guardian_relationship || '',
-      guardian_phone: p.guardian_phone || '',
+      guardian_account_id: p.guardian_account_id || '',
       role: p.role || '',
       pairing_code: p.pairing_code || '',
       elder_account_id: p.elder_account_id || '',
-      guardian_account_id: p.guardian_account_id || '',
     },
     user: u,
   };
@@ -1894,7 +1893,7 @@ function renderAuthSetup(root, isZh) {
       if (sb && u) {
         try {
           const { data } = await sb.from('profiles')
-            .select('display_name, preferred_name, gender, age, city, birth_date, news_topics, guardian_name, guardian_relationship, guardian_phone, setup_complete')
+            .select('display_name, preferred_name, gender, age, city, birth_date, news_topics, guardian_account_id, setup_complete')
             .eq('id', u.id).maybeSingle();
           if (data) state.profile = { ...(state.profile || {}), ...data };
         } catch(_) {}
@@ -1957,9 +1956,7 @@ function renderAuthSetup(root, isZh) {
   if (skipGuardian) {
     skipGuardian.onclick = () => {
       wizardCollect(w);
-      w.data.guardian_name = w.data.guardian_name || null;
-      w.data.guardian_relationship = w.data.guardian_relationship || null;
-      w.data.guardian_phone = w.data.guardian_phone || null;
+      w.data.guardian_account_id = null;
       wizardFinish(root, isZh, true);
     };
   } else {
@@ -2039,22 +2036,9 @@ function bindWizardStep2() {
 function wizardStep3(w, isZh) {
   return `
     <div style="text-align:left">
-      <label class="field-label">${t('setupGuardianName')}</label>
-      <input id="wzGName" value="${escapeHtml(w.data.guardian_name||'')}" style="font-size:1.2rem" placeholder="${t('setupGuardianNamePh')}">
-      <div style="height:14px"></div>
-      <label class="field-label">${t('setupGuardianRel')}</label>
-      <select id="wzGRel" style="font-size:1.2rem;padding:12px;border-radius:12px;border:1px solid var(--border-app);width:100%;background:#fff">
-        <option value="" ${!w.data.guardian_relationship?'selected':''}>—</option>
-        <option value="son"       ${w.data.guardian_relationship==='son'      ?'selected':''}>${t('setupRelSon')}</option>
-        <option value="daughter"  ${w.data.guardian_relationship==='daughter' ?'selected':''}>${t('setupRelDaughter')}</option>
-        <option value="spouse"    ${w.data.guardian_relationship==='spouse'   ?'selected':''}>${t('setupRelSpouse')}</option>
-        <option value="grandchild"${w.data.guardian_relationship==='grandchild'?'selected':''}>${t('setupRelGrandchild')}</option>
-        <option value="sibling"   ${w.data.guardian_relationship==='sibling'  ?'selected':''}>${t('setupRelSibling')}</option>
-        <option value="other"     ${w.data.guardian_relationship==='other'    ?'selected':''}>${t('setupRelOther')}</option>
-      </select>
-      <div style="height:14px"></div>
-      <label class="field-label">${t('setupGuardianPhone')}</label>
-      <input id="wzGPhone" value="${escapeHtml(w.data.guardian_phone||'')}" style="font-size:1.2rem" placeholder="${t('setupGuardianPhonePh')}">
+      <label class="field-label">${t('setupGuardianId')}</label>
+      <input id="wzGId" value="${escapeHtml(w.data.guardian_account_id||'')}" style="font-size:1.2rem" placeholder="${t('setupGuardianIdPh')}">
+      <p class="text-soft" style="font-size:.85rem;margin-top:8px;line-height:1.4">${isZh ? '守护人可在「我的 → 账号与配对」里复制自己的账号 ID。' : 'The guardian can copy their Account ID from Me → Account & Pairing.'}</p>
     </div>`;
 }
 
@@ -2069,10 +2053,12 @@ function wizardCollect(w) {
     w.data.city           = get('wzCity');
     w.data.birth_date     = document.getElementById('wzBirth')?.value || '';
   } else if (w.step === 2) {
-    w.data.guardian_name         = (document.getElementById('wzGName')?.value  || '').trim();
-    w.data.guardian_relationship = (document.getElementById('wzGRel')?.value  || '').trim();
-    w.data.guardian_phone        = (document.getElementById('wzGPhone')?.value || '').trim();
+    w.data.guardian_account_id = (document.getElementById('wzGId')?.value || '').trim();
   }
+}
+
+function isUuid(v) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v || '');
 }
 
 function wizardAdvance(root, isZh) {
@@ -2086,6 +2072,9 @@ function wizardAdvance(root, isZh) {
     w.step = 2; renderAuthSetup(root, isZh); return;
   }
   // step 2 -> finish
+  if (w.data.guardian_account_id && !isUuid(w.data.guardian_account_id)) {
+    return toast(isZh ? '请输入有效的账号 ID（UUID 格式）' : 'Please enter a valid Account ID (UUID format)', true);
+  }
   wizardFinish(root, isZh, false);
 }
 
@@ -2101,9 +2090,11 @@ async function wizardFinish(root, isZh, skip) {
     city: w.data.city || null,
     birth_date: w.data.birth_date || null,
     news_topics: w.data.news_topics,
-    guardian_name: w.data.guardian_name || null,
-    guardian_relationship: w.data.guardian_relationship || null,
-    guardian_phone: w.data.guardian_phone || null,
+    guardian_account_id: w.data.guardian_account_id || null,
+    // Legacy fields are no longer collected; clear them so they don't linger.
+    guardian_name: null,
+    guardian_relationship: null,
+    guardian_phone: null,
     role: w.data.role || null,
     // If they reached step 3 (or explicitly hit Next on step 2), mark complete.
     // If they hit Skip on step 1, leave setup_complete as-is so they can revisit.
@@ -2273,6 +2264,7 @@ async function renderHome(root) {
         .eq('id', sbUser.id)
         .maybeSingle();
       if (data) state.profile = data;
+      try { setupCrisisAlerts(); } catch (_) {}
     } catch (_) { /* name fallback handles it */ }
   }
   const h = new Date().getHours();
@@ -2428,15 +2420,312 @@ async function triggerSos(askConfirm = true) {
   }
   toast(t('sosCalling'), true);
   speak(t('sosCalling'));
-  // Write crisis event to Supabase
+
+  // Build a rich payload (mirrors the management app's alarm record) so the
+  // guardian's popup can show who/where/when without an extra lookup.
+  const name = (state.profile && (state.profile.display_name || state.profile.preferred_name)) || getDisplayName();
+  const payload = {
+    source: 'web_app',
+    display_name: name || '',
+    phone: (sbUser && sbUser.phone) || '',
+    timestamp: new Date().toISOString()
+  };
+
+  // Attach a live location so the guardian can open it on a map.
+  try {
+    await new Promise((res) => {
+      if (!navigator.geolocation) return res();
+      navigator.geolocation.getCurrentPosition((pos) => {
+        payload.location = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        res();
+      }, () => res(), { enableHighAccuracy: false, timeout: 4000 });
+    });
+  } catch (_) { /* location is optional */ }
+
+  // Mirror the management app: record locally FIRST (resilient when the
+  // network/Supabase is unavailable), then sync to Supabase in the
+  // background. flushPendingSos() retries any unsynced records later.
+  const rec = { payload, at: Date.now() };
+  try {
+    const q = JSON.parse(localStorage.getItem('pending_sos') || '[]');
+    q.push(rec);
+    localStorage.setItem('pending_sos', JSON.stringify(q.slice(-5)));
+  } catch (_) {}
+
   if (sbReady()) {
     try {
       await sb.from('crisis_events').insert({
         user_id: sbUser.id,
         kind: 'sos_button',
-        payload: { source: 'web_app', timestamp: new Date().toISOString() }
+        payload
       });
-    } catch(e) { console.warn('Crisis log failed:', e); }
+      // Clear this pending record on success.
+      try {
+        const q = JSON.parse(localStorage.getItem('pending_sos') || '[]');
+        localStorage.setItem('pending_sos', JSON.stringify(q.filter(x => x.at !== rec.at)));
+      } catch (_) {}
+    } catch (e) { console.warn('Crisis log failed:', e); }
+  }
+}
+
+// Retry any SOS records that couldn't be synced earlier (e.g. the user was
+// offline when they pressed the button). Called after a session is (re)-
+// established.
+async function flushPendingSos() {
+  if (!sbReady()) return;
+  let q = [];
+  try { q = JSON.parse(localStorage.getItem('pending_sos') || '[]'); } catch (_) { return; }
+  if (!q.length) return;
+  const remaining = [];
+  for (const rec of q) {
+    try {
+      await sb.from('crisis_events').insert({
+        user_id: sbUser.id,
+        kind: 'sos_button',
+        payload: rec.payload
+      });
+    } catch (e) {
+      remaining.push(rec); // keep to retry later
+    }
+  }
+  try { localStorage.setItem('pending_sos', JSON.stringify(remaining.slice(-5))); } catch (_) {}
+}
+
+// =====================================================================
+// GUARDIAN LIVE EMERGENCY ALERT  (mirrors the management app's
+// EmergencyAlertPopup + playAlarmSound)
+// ---------------------------------------------------------------------
+// When a paired elder triggers SOS, a new row lands in `crisis_events`.
+// We subscribe via Supabase Realtime (RLS already limits the guardian to
+// their own elder's rows) and, on an unresolved insert, show a full-screen
+// flashing red popup + a Web Audio alarm. The guardian can "Respond" to
+// resolve it (sets resolved_at) which stops the alarm.
+// =====================================================================
+let crisisChannel = null;
+let activeCrisisAlerts = [];
+const crisisSnoozed = new Set();
+let crisisStylesInjected = false;
+let alarmAudioCtx = null;
+
+function ensureCrisisStyles() {
+  if (crisisStylesInjected) return;
+  const s = document.createElement('style');
+  s.id = 'crisisStyles';
+  s.textContent = `
+.crisis-overlay{
+  position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(circle at center, rgba(220,38,38,.96), rgba(140,10,10,.98));
+  color:#fff;text-align:center;padding:24px;
+  animation:emergency-pulse 1.1s ease-in-out infinite;
+}
+@keyframes emergency-pulse{
+  0%,100%{background:radial-gradient(circle at center, rgba(220,38,38,.96), rgba(140,10,10,.98));}
+  50%{background:radial-gradient(circle at center, rgba(255,70,70,.99), rgba(170,15,15,1));}
+}
+.crisis-icon{animation:emergency-icon-bounce .9s ease-in-out infinite;}
+@keyframes emergency-icon-bounce{
+  0%,100%{transform:translateY(0) scale(1);}
+  50%{transform:translateY(-12px) scale(1.12);}
+}
+.crisis-overlay .big-btn{
+  width:100%;border:none;border-radius:14px;padding:16px;font-family:'Lexend','Noto Sans SC',sans-serif;
+  font-size:1.1rem;cursor:pointer;font-weight:800;
+}
+.crisis-overlay a{color:#fff;text-decoration:underline;}
+`;
+  document.head.appendChild(s);
+  crisisStylesInjected = true;
+}
+
+// Elder ids this guardian is allowed to monitor (local guardians list +
+// the elder_account_id stored on the guardian's own profile).
+function getMonitoredElderIds() {
+  const ids = new Set();
+  if (Array.isArray(guardians)) guardians.forEach(g => { if (g && g.elder_id) ids.add(g.elder_id); });
+  if (state.profile && state.profile.elder_account_id) ids.add(state.profile.elder_account_id);
+  return [...ids];
+}
+
+function toAlert(row) {
+  return {
+    id: row.id,
+    elderId: row.user_id,
+    kind: row.kind,
+    payload: row.payload || {},
+    createdAt: row.created_at,
+    resolvedAt: row.resolved_at
+  };
+}
+
+function upsertCrisisAlert(row) {
+  const a = toAlert(row);
+  const i = activeCrisisAlerts.findIndex(x => x.id === a.id);
+  if (i >= 0) activeCrisisAlerts[i] = a; else activeCrisisAlerts.push(a);
+  renderCrisisPopup();
+}
+
+function removeCrisisAlert(id) {
+  activeCrisisAlerts = activeCrisisAlerts.filter(x => x.id !== id);
+  crisisSnoozed.delete(id);
+  renderCrisisPopup();
+}
+
+// Pull any still-open crises for our elders (covers alerts that fired
+// while the app was closed).
+async function refreshUnresolvedCrises() {
+  const elderIds = getMonitoredElderIds();
+  if (elderIds.length === 0) return;
+  try {
+    const { data, error } = await sb.from('crisis_events')
+      .select('id, user_id, kind, payload, created_at, resolved_at')
+      .in('user_id', elderIds)
+      .is('resolved_at', null)
+      .order('created_at', { ascending: false })
+      .limit(20);
+    if (!error && data) {
+      activeCrisisAlerts = data.map(toAlert);
+      renderCrisisPopup();
+    }
+  } catch (_) { /* non-fatal */ }
+}
+
+function setupCrisisAlerts() {
+  if (!sbReady()) return;
+  ensureCrisisStyles();
+  // Re-pull in case new elders were paired since we last ran.
+  refreshUnresolvedCrises();
+  if (crisisChannel) return;
+  try {
+    crisisChannel = sb.channel('guardian-crisis-' + (sbUser ? sbUser.id : 'x'))
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'crisis_events' },
+        (payload) => {
+          const row = payload.new || payload.old;
+          if (!row) return;
+          if (!getMonitoredElderIds().includes(row.user_id)) return;
+          if (payload.eventType === 'DELETE') { removeCrisisAlert(row.id); return; }
+          if (row.resolved_at) removeCrisisAlert(row.id);
+          else upsertCrisisAlert(row);
+        })
+      .subscribe();
+  } catch (e) { console.warn('crisis channel setup failed:', e); }
+}
+
+function playAlarmSound() {
+  try {
+    stopAlarmSound();
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    alarmAudioCtx = new Ctx();
+    let beeps = 0;
+    const maxBeeps = 8;
+    const beep = () => {
+      if (!alarmAudioCtx || beeps >= maxBeeps) { stopAlarmSound(); return; }
+      const o = alarmAudioCtx.createOscillator();
+      const g = alarmAudioCtx.createGain();
+      o.type = 'square';
+      o.frequency.value = 880;
+      g.gain.value = 0.0001;
+      o.connect(g); g.connect(alarmAudioCtx.destination);
+      const now = alarmAudioCtx.currentTime;
+      g.gain.exponentialRampToValueAtTime(0.3, now + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
+      o.start(now); o.stop(now + 0.26);
+      beeps++;
+      setTimeout(beep, 600);
+    };
+    beep();
+  } catch (_) { /* audio may be blocked until a user gesture; visual alert still shows */ }
+}
+
+function stopAlarmSound() {
+  try { if (alarmAudioCtx) { alarmAudioCtx.close().catch(() => {}); alarmAudioCtx = null; } } catch (_) {}
+}
+
+function renderCrisisPopup() {
+  let overlay = document.getElementById('crisisOverlay');
+  // Pick the most recent UN-snoozed unresolved alert.
+  const visible = activeCrisisAlerts
+    .filter(a => !a.resolvedAt && !crisisSnoozed.has(a.id))
+    .sort((x, y) => new Date(y.createdAt) - new Date(x.createdAt));
+
+  if (visible.length === 0) {
+    if (overlay) overlay.remove();
+    stopAlarmSound();
+    return;
+  }
+
+  ensureCrisisStyles();
+  const a = visible[0];
+  const isZh = state.lang === 'zh';
+  const name = (a.payload && a.payload.display_name) || (isZh ? '您的长辈' : 'Your elder');
+  const time = a.createdAt ? new Date(a.createdAt).toLocaleString(isZh ? 'zh-CN' : 'en-US') : '';
+  const loc = (a.payload && a.payload.location) || null;
+  const lat = loc && Number.isFinite(loc.lat) ? loc.lat : null;
+  const lng = loc && Number.isFinite(loc.lng) ? loc.lng : null;
+  const phone = (a.payload && a.payload.phone) || '';
+  const locHtml = (lat != null && lng != null)
+    ? `<p style="margin:6px 0"><a href="https://uri.amap.com/marker?position=${lng},${lat}&name=${encodeURIComponent(name)}&src=GoldenAge&coordinate=gaode&callnative=0" target="_blank">📍 ${isZh ? '查看实时位置' : 'View location'}</a></p>`
+    : '';
+  const callHtml = phone
+    ? `<button class="big-btn" id="crisisCall" style="background:#fff;color:#b91c1c">📞 ${isZh ? '拨打长辈' : 'Call elder'}</button>`
+    : '';
+  const moreTxt = (activeCrisisAlerts.filter(x => !x.resolvedAt).length - 1 > 0)
+    ? (isZh ? `还有 ${activeCrisisAlerts.filter(x => !x.resolvedAt).length - 1} 条未处理求助`
+            : `${activeCrisisAlerts.filter(x => !x.resolvedAt).length - 1} more unresolved`)
+    : '';
+
+  const firstShow = !overlay;
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'crisisOverlay';
+    overlay.className = 'crisis-overlay';
+    document.body.appendChild(overlay);
+  }
+  overlay.innerHTML = `
+    <div style="max-width:540px;width:100%">
+      <div class="crisis-icon" style="font-size:84px;line-height:1;margin-bottom:6px">⚠️</div>
+      <h1 style="font-size:2rem;font-family:'Lexend','Noto Sans SC',sans-serif;margin:0 0 6px">${isZh ? '紧急求助！' : 'EMERGENCY!'}</h1>
+      <p style="font-size:1.3rem;font-weight:700;margin:4px 0">${escapeHtml(name)}</p>
+      <p style="font-size:1rem;opacity:.95;margin:4px 0">${isZh ? '触发了一键求助 (SOS)' : 'triggered a one-tap SOS'}</p>
+      <p style="font-size:.95rem;opacity:.9;margin:4px 0">${escapeHtml(time)}</p>
+      ${locHtml}
+      <div style="display:flex;flex-direction:column;gap:12px;margin-top:22px">
+        <button class="big-btn" id="crisisRespond" style="background:#fff;color:#b91c1c">${isZh ? '✓ 我已响应' : '✓ I Responded'}</button>
+        ${callHtml}
+        <button class="big-btn" id="crisisLater" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.5);font-weight:600">${isZh ? '稍后处理' : 'Later'}</button>
+      </div>
+      <p style="font-size:.8rem;opacity:.85;margin-top:14px">${escapeHtml(moreTxt)}</p>
+    </div>`;
+
+  const respondBtn = document.getElementById('crisisRespond');
+  if (respondBtn) respondBtn.onclick = () => respondCrisis(a.id);
+  const laterBtn = document.getElementById('crisisLater');
+  if (laterBtn) laterBtn.onclick = () => {
+    crisisSnoozed.add(a.id);
+    stopAlarmSound();
+    renderCrisisPopup();
+  };
+
+  if (firstShow) {
+    playAlarmSound();
+    try { navigator.vibrate && navigator.vibrate([500, 200, 500, 200, 500]); } catch (_) {}
+    const msg = isZh ? `${name} 发起了紧急求助，请尽快响应` : `${name} triggered an emergency SOS, please respond`;
+    try { speak(msg); } catch (_) {}
+  }
+}
+
+async function respondCrisis(id) {
+  // Optimistic: clear immediately so the popup disappears even if the
+  // network is slow. Realtime UPDATE will also fire and clean up.
+  crisisSnoozed.delete(id);
+  removeCrisisAlert(id);
+  if (sbReady()) {
+    try {
+      await sb.from('crisis_events')
+        .update({ resolved_at: new Date().toISOString() })
+        .eq('id', id);
+    } catch (e) { console.warn('resolve crisis failed:', e); }
   }
 }
 
@@ -3427,7 +3716,7 @@ function renderVerdict(r) {
 
 // --- GUARDIAN ---
 // Guardian state — persisted. The list starts empty; the user adds their
-// own guardians via the QR/pair flow. We also clear the legacy 'demo-abc123'
+// own guardians via the personalized ID / pair flow. We also clear the legacy 'demo-abc123'
 // seed that previous versions planted.
 const guardians = [];
 function loadGuardians() {
@@ -3514,6 +3803,7 @@ function renderGuardian(root) {
         idInput.value = '';
         toast(t('pairBindOk'));
         render();
+        try { setupCrisisAlerts(); } catch (_) {}
       } finally {
         bindBtn.disabled = false;
       }

@@ -837,6 +837,12 @@ const TOOLS = {
 // Both the LLM result and the legacy rule result expose the same shape
 // {verdict, reasons:[{zh,en}], advice:{zh,en}}, so this works for either.
 function scamDangerReply(r) {
+  const text = r.text || '';
+  if (text) {
+    return state.lang === 'zh'
+      ? `⚠️ 警告：这条消息很可能是诈骗。\n\n${text}\n\n已为您打开「防诈骗检测」查看详情。`
+      : `⚠️ Warning: this message is very likely a scam.\n\n${text}\n\nOpening Anti-Scam Shield for full analysis.`;
+  }
   const reasons = (r.reasons || []).slice(0, 4)
     .map(x => '• ' + (state.lang === 'zh' ? (x.zh || x.en) : (x.en || x.zh)))
     .join('\n');
@@ -845,11 +851,10 @@ function scamDangerReply(r) {
     : `⚠️ Warning: this message is very likely a scam.\n\n${(r.advice && r.advice.en) || ''}\n\nSignals detected:\n${reasons}\n\nOpening Anti-Scam Shield for full analysis.`;
 }
 
-// Helper: scan a message for scam signals. The VERDICT comes straight from
-// the LLM (analyzeScamLLM) — we never let a rule list decide safety. We only
-// hard-block the conversation on a clear DANGER, so the model's broader
-// "caution" verdict never hijacks normal chat. Rules are used only as a
-// last-resort fallback when the LLM is unavailable.
+// Helper: scan a message for scam signals. The verdict comes DIRECTLY from
+// the LLM via analyzeScamLLM — no regex rule list is used. We only hard-block
+// the conversation on a clear DANGER verdict so "caution" / "safe" verdicts
+// do not hijack normal chat.
 async function aiScamCheck(text) {
   if (!text || text.length < 15) return null;
   // Skip if text is clearly a chat command (already handled by aiMatchTool)
@@ -864,14 +869,8 @@ async function aiScamCheck(text) {
       // caution / safe: don't interrupt the conversation.
       return null;
     }
-    // LLM call failed — fall back to rules so obvious scams still trip.
-    if (r && r._fallbackEligible) {
-      const fb = analyzeScam(text);
-      if (fb.verdict === 'danger') {
-        return { reply: scamDangerReply(fb), tool: '🛡️ ai_scam_check', action: () => go('scam') };
-      }
-    }
   }
+  // LLM unavailable or failed: don't silently fall back to rules.
   return null;
 }
 
@@ -906,23 +905,15 @@ async function aiChat(userText) {
         const r = await window.LiveData.analyzeScamLLM(quoted, state.lang);
         if (r && r.verdict && !r.error) {
           const verdictLabel = r.verdict === 'danger' ? (state.lang==='zh'?'极可能是诈骗':'Highly likely a scam') : r.verdict === 'caution' ? (state.lang==='zh'?'信息中有可疑内容':'Suspicious content') : (state.lang==='zh'?'未发现明显风险':'No obvious risk');
-          const reasons = (r.reasons||[]).slice(0,5).map(x => '• ' + (state.lang==='zh' ? (x.zh||x.en) : (x.en||x.zh))).join('\n');
-          const advice = (r.advice && (state.lang==='zh' ? r.advice.zh : r.advice.en)) || '';
+          const fullText = r.text || '';
           return {
-            reply: state.lang==='zh'
-              ? `${verdictLabel}\n\n${advice}\n\n命中特征：\n${reasons || '（无）'}`
-              : `${verdictLabel}\n\n${advice}\n\nSignals:\n${reasons || '(none)'}`,
+            reply: `${verdictLabel}\n\n${fullText}`,
             tool: '🛡️ check_scam'
           };
         }
-      }
-      if (quoted) {
-        const r = analyzeScam(quoted);
-        const verdictLabel = r.verdict === 'danger' ? (state.lang==='zh'?'极可能是诈骗':'Highly likely a scam') : r.verdict === 'caution' ? (state.lang==='zh'?'信息中有可疑内容':'Suspicious content') : (state.lang==='zh'?'未发现明显风险':'No obvious risk');
+        // LLM failed — show error instead of falling back to rules.
         return {
-          reply: state.lang==='zh'
-            ? `${verdictLabel}\n\n${r.advice.zh}\n\n命中特征：\n${r.reasons.slice(0,5).map(x => '• ' + x.zh).join('\n') || '（无）'}`
-            : `${verdictLabel}\n\n${r.advice.en}\n\nSignals:\n${r.reasons.slice(0,5).map(x => '• ' + x.en).join('\n') || '(none)'}`,
+          reply: state.lang === 'zh' ? 'AI 分析暂时不可用，请稍后再试。' : 'AI analysis is temporarily unavailable. Please try again later.',
           tool: '🛡️ check_scam'
         };
       }
@@ -3304,8 +3295,8 @@ function renderScam(root) {
     setLoading(true);
     let result = null;
     let usedLlm = false;
-    let usedFallback = false;
-    // Try the LLM first.
+    let errorText = '';
+    // Use the LLM directly — no regex fallback.
     try {
       if (window.LiveData && window.LiveData.analyzeScamLLM) {
         const r = await window.LiveData.analyzeScamLLM(v, state.lang);
@@ -3313,35 +3304,39 @@ function renderScam(root) {
           result = r;
           usedLlm = true;
         } else {
-          // LLM failed or returned invalid output — fall back to regex.
-          usedFallback = true;
+          errorText = r?.error || (state.lang==='zh' ? 'AI 分析失败' : 'AI analysis failed');
         }
       } else {
-        usedFallback = true;
+        errorText = state.lang === 'zh' ? 'AI 组件未加载' : 'AI component not loaded';
       }
     } catch (e) {
       console.warn('LLM scam check failed:', e);
-      usedFallback = true;
+      errorText = state.lang === 'zh' ? 'AI 分析失败' : 'AI analysis failed';
     }
     if (!result) {
-      result = analyzeScam(v);
-      // Tag the source so the UI can show a small badge.
-      result._source = 'rules';
+      result = {
+        verdict: 'caution',
+        confidence: 0,
+        text: errorText,
+        reasons: [],
+        advice: { zh: '', en: '' },
+        _source: 'error'
+      };
     }
     renderScam._result = result;
     render();
     setLoading(false);
     // Save to Supabase
-    if (sbReady()) {
+    if (sbReady() && usedLlm) {
       try {
         await sb.from('scam_reports').insert({
           user_id: sbUser.id,
           input_text: v,
           verdict: renderScam._result.verdict,
           confidence: renderScam._result.confidence || null,
-          advice: (renderScam._result.advice && renderScam._result.advice[state.lang]) || null,
-          reasoning: (renderScam._result.reasons || []).map(r => r[state.lang]).join('; '),
-          source: usedLlm ? 'llm' : (usedFallback ? 'rules-fallback' : 'rules')
+          advice: (renderScam._result.text || '').slice(0, 500),
+          reasoning: '',
+          source: 'llm'
         });
       } catch(e) { console.warn('Scam report save failed:', e); }
     }
@@ -3357,19 +3352,23 @@ function renderVerdict(r) {
     : (r._source === 'rules'
         ? `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;background:var(--bg);color:var(--muted);border:1px solid var(--border-app);font-size:.7rem;font-weight:600">${state.lang==='zh'?'规则':'Rules'}</span>`
         : '');
+  const text = r.text || '';
+  const reasons = (r.reasons || []).map(x => '• ' + (state.lang === 'zh' ? (x.zh || x.en) : (x.en || x.zh))).join('');
+  const hasConfidence = typeof r.confidence === 'number' && r.confidence > 0;
   return `
     <div class="verdict-card ${v}">
       <div class="row">
         <div class="icon">${icon}</div>
         <div style="flex:1;min-width:0">
           <h3 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${vLabel}${sourceBadge}</h3>
-          <div class="confidence">${state.lang==='zh'?'原因':'Reasons'}: ${r.reasons.length}</div>
+          ${hasConfidence ? `<div class="confidence">${state.lang==='zh'?'可信度':'Confidence'}: ${Math.round(r.confidence*100)}%</div>` : ''}
         </div>
       </div>
-      <div class="advice">
-        <strong>${t('scamAdvice')}:</strong> ${r.advice[state.lang]}
-      </div>
-      <ul>${r.reasons.map(x => `<li>${x[state.lang]}</li>`).join('')}</ul>
+      ${text
+        ? `<div class="advice" style="white-space:pre-wrap">${escapeHtml(text)}</div>`
+        : `<div class="advice"><strong>${t('scamAdvice')}:</strong> ${(r.advice && r.advice[state.lang]) || ''}</div>
+           ${reasons ? `<ul>${reasons}</ul>` : ''}`
+      }
     </div>`;
 }
 

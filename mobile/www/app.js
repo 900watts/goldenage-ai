@@ -293,6 +293,36 @@ const APP_TOOLS = [
       description: 'List the user\'s upcoming reminders. Use this when the user asks "what reminders do I have?" or "what\'s next?".',
       parameters: { type: 'object', properties: {} }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'save_memory',
+      description: 'Save a fact about the user (or, for guardian users, about the elder they protect) into your long-term memory. Use when the user says "记住.../请记住.../remember..." or shares a stable fact like allergies, family members, medication, dietary restrictions, anniversary dates, important relatives, doctor visits, etc. category is one of: preference, habit, fact, event, health, family. importance 1-10 (default 5).',
+      parameters: {
+        type: 'object',
+        properties: {
+          content: { type: 'string', description: 'The fact to remember, in 1-2 short sentences.' },
+          category: { type: 'string', enum: ['preference','habit','fact','event','health','family'], description: 'Category of the fact.' },
+          importance: { type: 'number', description: '1-10. Health/family = 8, habit/preference = 5, transient = 2.' }
+        },
+        required: ['content']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'forget_memory',
+      description: 'Delete a memory you previously saved. Use when the user says "忘了.../forget..." or "不要再记.../please don\'t remember...". The id is returned in earlier save_memory tool results.',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'The memory id from the previous save_memory tool result.' }
+        },
+        required: ['id']
+      }
+    }
   }
 ];
 
@@ -411,6 +441,72 @@ async function loadUserPreferences(userId) {
       if (data.language && !localStorage.getItem('lang')) state.lang = data.language;
     }
   } catch(_) {}
+}
+
+// ---------------- AI AGENT ----------------
+// Ensure the signed-in user has an ai_agents row. The Edge Function
+// uses this row's soul_md + role + memories to build the system prompt
+// for every chat message. If no row exists yet, we create one with a
+// 6-char registration_code and a default soul.md fetched from the
+// local template (assets/agent-souls/{role}.{lang}.md).
+async function ensureAgentForUser(userId) {
+  if (!sb || !userId) return null;
+  try {
+    const existing = await sb.from('ai_agents')
+      .select('id, name, role, soul_md, registration_code, memory_count, subject_user_id_default')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (existing.data) {
+      state._agent = existing.data;
+      return existing.data;
+    }
+    // Determine role from the user's profile.role column.
+    const prof = await sb.from('profiles')
+      .select('role, display_name')
+      .eq('id', userId)
+      .maybeSingle();
+    const role = (prof.data && prof.data.role === 'guardian') ? 'protector' : 'companion';
+    const lang = (state.lang === 'en') ? 'en' : 'zh';
+    // Default name: '小金' (companion) / '守护者小金' (protector) for zh,
+    // 'Goldie' / 'Guardian AI' for en.
+    const isZh = lang === 'zh';
+    const name = role === 'protector' ? (isZh ? '守护者小金' : 'Guardian AI') : (isZh ? '小金' : 'Goldie');
+    // Fetch the default soul.md template.
+    let soul = '';
+    try {
+      const url = (role === 'protector' ? 'agent-souls/guardian' : 'agent-souls/companion') + '.' + lang + '.md';
+      const r = await fetch(url);
+      if (r.ok) soul = await r.text();
+    } catch (_) {}
+    // Use the security-definer RPC to generate a 6-char code + insert the row.
+    const { data, error } = await sb.rpc('ai_agent_create', {
+      p_name: name,
+      p_role: role,
+      p_soul_md: soul
+    });
+    if (error) {
+      // Fallback: insert via PostgREST (the function may not be defined yet).
+      // Use a temporary code, then re-roll.
+      const tmpCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+      const ins = await sb.from('ai_agents').insert({
+        user_id: userId,
+        name,
+        role,
+        registration_code: tmpCode,
+        soul_md: soul
+      }).select('id, name, role, soul_md, registration_code, memory_count, subject_user_id_default').single();
+      if (ins.error) throw ins.error;
+      state._agent = ins.data;
+      return ins.data;
+    }
+    // RPC returns a row or an object.
+    const agentRow = Array.isArray(data) ? data[0] : data;
+    state._agent = agentRow;
+    return agentRow;
+  } catch (e) {
+    console.warn('ensureAgentForUser:', e);
+    return null;
+  }
 }
 
 // ---------------- NEWS TOPICS ----------------
@@ -741,6 +837,12 @@ const TOOLS = {
 // Both the LLM result and the legacy rule result expose the same shape
 // {verdict, reasons:[{zh,en}], advice:{zh,en}}, so this works for either.
 function scamDangerReply(r) {
+  const text = r.text || '';
+  if (text) {
+    return state.lang === 'zh'
+      ? `⚠️ 警告：这条消息很可能是诈骗。\n\n${text}\n\n已为您打开「防诈骗检测」查看详情。`
+      : `⚠️ Warning: this message is very likely a scam.\n\n${text}\n\nOpening Anti-Scam Shield for full analysis.`;
+  }
   const reasons = (r.reasons || []).slice(0, 4)
     .map(x => '• ' + (state.lang === 'zh' ? (x.zh || x.en) : (x.en || x.zh)))
     .join('\n');
@@ -749,11 +851,10 @@ function scamDangerReply(r) {
     : `⚠️ Warning: this message is very likely a scam.\n\n${(r.advice && r.advice.en) || ''}\n\nSignals detected:\n${reasons}\n\nOpening Anti-Scam Shield for full analysis.`;
 }
 
-// Helper: scan a message for scam signals. The VERDICT comes straight from
-// the LLM (analyzeScamLLM) — we never let a rule list decide safety. We only
-// hard-block the conversation on a clear DANGER, so the model's broader
-// "caution" verdict never hijacks normal chat. Rules are used only as a
-// last-resort fallback when the LLM is unavailable.
+// Helper: scan a message for scam signals. The verdict comes DIRECTLY from
+// the LLM via analyzeScamLLM — no regex rule list is used. We only hard-block
+// the conversation on a clear DANGER verdict so "caution" / "safe" verdicts
+// do not hijack normal chat.
 async function aiScamCheck(text) {
   if (!text || text.length < 15) return null;
   // Skip if text is clearly a chat command (already handled by aiMatchTool)
@@ -768,14 +869,8 @@ async function aiScamCheck(text) {
       // caution / safe: don't interrupt the conversation.
       return null;
     }
-    // LLM call failed — fall back to rules so obvious scams still trip.
-    if (r && r._fallbackEligible) {
-      const fb = analyzeScam(text);
-      if (fb.verdict === 'danger') {
-        return { reply: scamDangerReply(fb), tool: '🛡️ ai_scam_check', action: () => go('scam') };
-      }
-    }
   }
+  // LLM unavailable or failed: don't silently fall back to rules.
   return null;
 }
 
@@ -810,23 +905,15 @@ async function aiChat(userText) {
         const r = await window.LiveData.analyzeScamLLM(quoted, state.lang);
         if (r && r.verdict && !r.error) {
           const verdictLabel = r.verdict === 'danger' ? (state.lang==='zh'?'极可能是诈骗':'Highly likely a scam') : r.verdict === 'caution' ? (state.lang==='zh'?'信息中有可疑内容':'Suspicious content') : (state.lang==='zh'?'未发现明显风险':'No obvious risk');
-          const reasons = (r.reasons||[]).slice(0,5).map(x => '• ' + (state.lang==='zh' ? (x.zh||x.en) : (x.en||x.zh))).join('\n');
-          const advice = (r.advice && (state.lang==='zh' ? r.advice.zh : r.advice.en)) || '';
+          const fullText = r.text || '';
           return {
-            reply: state.lang==='zh'
-              ? `${verdictLabel}\n\n${advice}\n\n命中特征：\n${reasons || '（无）'}`
-              : `${verdictLabel}\n\n${advice}\n\nSignals:\n${reasons || '(none)'}`,
+            reply: `${verdictLabel}\n\n${fullText}`,
             tool: '🛡️ check_scam'
           };
         }
-      }
-      if (quoted) {
-        const r = analyzeScam(quoted);
-        const verdictLabel = r.verdict === 'danger' ? (state.lang==='zh'?'极可能是诈骗':'Highly likely a scam') : r.verdict === 'caution' ? (state.lang==='zh'?'信息中有可疑内容':'Suspicious content') : (state.lang==='zh'?'未发现明显风险':'No obvious risk');
+        // LLM failed — show error instead of falling back to rules.
         return {
-          reply: state.lang==='zh'
-            ? `${verdictLabel}\n\n${r.advice.zh}\n\n命中特征：\n${r.reasons.slice(0,5).map(x => '• ' + x.zh).join('\n') || '（无）'}`
-            : `${verdictLabel}\n\n${r.advice.en}\n\nSignals:\n${r.reasons.slice(0,5).map(x => '• ' + x.en).join('\n') || '(none)'}`,
+          reply: state.lang === 'zh' ? 'AI 分析暂时不可用，请稍后再试。' : 'AI analysis is temporarily unavailable. Please try again later.',
           tool: '🛡️ check_scam'
         };
       }
@@ -943,6 +1030,33 @@ async function aiChat(userText) {
             // so the user sees the rendered table.
             toolLabel = state.lang==='zh' ? '📋 提醒列表' : '📋 Reminders';
             setTimeout(() => { try { go('reminders'); } catch(_) {} }, 300);
+          } else if (name === 'save_memory') {
+            const res = (r.tool_results || []).find(x => x && x.name === 'save_memory' && JSON.stringify(x.args) === JSON.stringify(args));
+            if (res && res.result && res.result.ok) {
+              const cat = res.result.memory && res.result.memory.category;
+              toolLabel = state.lang==='zh' ? '🧠 已记住' : '🧠 Remembered';
+              const ack = state.lang==='zh'
+                ? (cat === 'health' ? '好的，我已记住您的健康相关情况。' : cat === 'family' ? '好的，我已记住您家人的信息。' : '好的，我已记住这件事。')
+                : 'Got it — I\'ll remember that.';
+              toast(ack);
+              setTimeout(() => speak(ack), 400);
+              // Refresh the agent in memory so subsequent calls see the new memory_count.
+              if (state._agent) state._agent.memory_count = (state._agent.memory_count || 0) + 1;
+              // Re-render the AI section if it's open.
+              try { const el = document.getElementById('agentMemGrid'); if (el) refreshAgentMemories().catch(() => {}); } catch(_) {}
+            } else {
+              toolLabel = state.lang==='zh' ? '⚠️ 记住失败' : '⚠️ Remember failed';
+            }
+          } else if (name === 'forget_memory') {
+            const res = (r.tool_results || []).find(x => x && x.name === 'forget_memory' && JSON.stringify(x.args) === JSON.stringify(args));
+            if (res && res.result && res.result.ok) {
+              toolLabel = state.lang==='zh' ? '🧠 已忘记' : '🧠 Forgotten';
+              toast(state.lang==='zh' ? '好的，我已忘记。' : 'Got it, I\'ll forget that.');
+              if (state._agent) state._agent.memory_count = Math.max(0, (state._agent.memory_count || 0) - 1);
+              try { const el = document.getElementById('agentMemGrid'); if (el) refreshAgentMemories().catch(() => {}); } catch(_) {}
+            } else {
+              toolLabel = state.lang==='zh' ? '⚠️ 删除失败' : '⚠️ Forget failed';
+            }
           }
         }
         return { reply: (r.text || '').trim(), tool: toolLabel };
@@ -1616,6 +1730,9 @@ async function finishSignIn(user, isZh, fresh = true) {
   state.signedIn = true;
   localStorage.setItem('signedIn', 'true');
   loadUserPreferences(user.id);
+  // Ensure the user has an ai_agents row. If not, create one with a
+  // default soul.md fetched from the local template.
+  ensureAgentForUser(user.id).catch(e => console.warn('ensureAgentForUser failed:', e));
   // Only show the welcome toast on a real sign-in (not a token refresh).
   if (fresh) toast(isZh ? '登录成功，欢迎！' : 'Welcome!');
   applyState();
@@ -2394,6 +2511,216 @@ function renderMap(root) {
   })();
 }
 
+// ---------------- MY AI AGENT (soul + memories) ----------------
+function renderAgentCard(agent) {
+  const isZh = state.lang === 'zh';
+  if (!agent) {
+    return `<div class="text-soft" style="font-size:.9rem">${isZh?'正在加载…':'Loading…'}</div>`;
+  }
+  const roleLabel = agent.role === 'protector'
+    ? (isZh ? '守护者 AI' : 'Guardian AI')
+    : (isZh ? '陪伴 AI' : 'Companion AI');
+  const codeLabel = isZh ? '我的注册码' : 'My registration code';
+  return `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+      <div style="width:54px;height:54px;border-radius:14px;background:linear-gradient(135deg,var(--primary),var(--cta));color:#fff;display:flex;align-items:center;justify-content:center">${ICON.ai || '🤖'}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:1.1rem">${escapeHtml(agent.name)}</div>
+        <div class="text-soft" style="font-size:.85rem">${escapeHtml(roleLabel)} · ${isZh ? '记忆数' : 'Memories'}: <b>${agent.memory_count || 0}</b></div>
+      </div>
+      <span style="font-size:.72rem;font-weight:600;padding:4px 10px;border-radius:999px;background:linear-gradient(135deg,rgba(217,119,6,.15),rgba(202,138,4,.15));color:var(--primary);border:1px solid var(--border-app);white-space:nowrap">${isZh ? '✨ 自动养成' : '✨ Auto-config'}</span>
+    </div>
+    <p class="text-soft" style="font-size:.78rem;margin:0 0 14px;line-height:1.5">${isZh ? 'AI 会根据我们的对话自动记住关于您的事，并随之调整自己的人格（soul）。您也可以随时手动编辑。' : 'The AI automatically remembers things about you from our chats and tunes its own personality (soul). You can also edit it anytime.'}</p>
+    <div style="padding:12px 14px;background:var(--bg);border-radius:12px;border:1px solid var(--border-app);margin-bottom:14px">
+      <div style="font-size:.78rem;color:var(--muted);margin-bottom:4px">${codeLabel}</div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="font-family:'Lexend',monospace;font-size:1.5rem;font-weight:800;letter-spacing:4px;color:var(--primary)">${escapeHtml(agent.registration_code || '------')}</div>
+        <button class="big-btn ghost" id="copyAgentCode" style="width:auto;min-width:0;padding:6px 12px;font-size:.85rem">${isZh?'复制':'Copy'}</button>
+      </div>
+      <p class="text-soft" style="font-size:.78rem;margin:6px 0 0;line-height:1.5">${isZh ? '把这个 6 位注册码发给你的家人，他们可以在「守护者」端用这个码关联你。' : 'Share this 6-char code with your family so they can pair with you on the Guardian side.'}</p>
+    </div>
+
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+      <button class="big-btn primary" id="refineSoulBtn" style="flex:1;min-width:140px;padding:10px;font-size:.9rem;background:linear-gradient(135deg,var(--primary),var(--cta))">${isZh ? '✨ 让 AI 完善人格' : '✨ Perfect personality'}</button>
+      <button class="big-btn ghost" id="editSoulBtn" style="flex:1;min-width:120px;padding:10px;font-size:.9rem">${isZh ? '编辑灵魂' : 'Edit soul'}</button>
+      <button class="big-btn ghost" id="reloadAgentBtn" style="width:auto;min-width:0;padding:10px 14px;font-size:.9rem">${isZh ? '刷新' : 'Refresh'}</button>
+    </div>
+
+    <div style="font-size:.85rem;font-weight:600;margin:18px 0 8px">${isZh ? '记忆' : 'Memories'}</div>
+    <div id="agentMemGrid" class="auto-grid" style="margin-bottom:8px">
+      <div class="text-soft" style="font-size:.85rem;grid-column:1/-1">${isZh ? '加载中…' : 'Loading…'}</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <input id="addMemInput" placeholder="${isZh ? '加一条记忆（例：每天 8 点要量血压）' : 'Add a memory (e.g. needs blood pressure check at 8am)'}" style="flex:1;font-size:.95rem;padding:10px;border-radius:10px;border:1px solid var(--border-app)">
+      <button class="big-btn primary" id="addMemBtn" style="width:auto;min-width:0;padding:10px 16px;font-size:.9rem">${isZh ? '记住' : 'Save'}</button>
+    </div>
+  `;
+}
+
+// Trigger soul refinement on demand: asks the server to reflect on the
+// accumulated memories and rewrite the agent's soul.md.
+async function refineMyAgent() {
+  if (!state._agent) { toast(state.lang==='zh' ? '请稍候，AI 正在准备…' : 'Please wait, AI is loading…', true); return; }
+  const isZh = state.lang === 'zh';
+  const btn = document.getElementById('refineSoulBtn');
+  if (btn) { btn.disabled = true; btn.textContent = isZh ? '✨ 完善中…' : '✨ Refining…'; }
+  try {
+    const r = await window.LiveData.llmChat([], { action: 'refine_agent', lang: state.lang });
+    if (r && r.error) throw new Error(r.error + (r.detail ? (': ' + r.detail) : ''));
+    const soul = r && r.soul_md;
+    if (soul) {
+      state._agent = { ...state._agent, soul_md: soul };
+      // Persist locally so the manual editor shows the new soul.
+      try { await sb.rpc('ai_agent_set_soul', { p_soul_md: soul }); } catch (_) {}
+    }
+    const el = document.getElementById('agentCard');
+    if (el) el.innerHTML = renderAgentCard(state._agent);
+    bindAgentCard();
+    refreshAgentMemories();
+    toast(isZh ? 'AI 已根据我们的记忆完善了人格' : 'AI tuned its personality from your memories');
+  } catch (e) {
+    toast((isZh ? '完善失败：' : 'Failed: ') + (e.message || e), true);
+  } finally {
+    const b = document.getElementById('refineSoulBtn');
+    if (b) { b.disabled = false; b.textContent = isZh ? '✨ 让 AI 完善人格' : '✨ Perfect personality'; }
+  }
+}
+
+async function refreshAgentMemories() {
+  if (!sb || !state._agent) return;
+  const grid = document.getElementById('agentMemGrid');
+  if (!grid) return;
+  try {
+    const { data } = await sb.from('agent_memories')
+      .select('id, category, content, importance, created_at')
+      .eq('agent_id', state._agent.id)
+      .neq('category', '_meta')
+      .order('importance', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (!data || !data.length) {
+      const isZh = state.lang === 'zh';
+      grid.innerHTML = `<div class="text-soft" style="font-size:.85rem;grid-column:1/-1">${isZh ? '暂无记忆。试试在 AI 对话里说"记住我对青霉素过敏"，或者在上方直接加一条。' : 'No memories yet. Try telling the AI "remember I\'m allergic to penicillin" or add one above.'}</div>`;
+      return;
+    }
+    const catLabel = { preference: '偏好', habit: '习惯', fact: '事实', event: '事件', health: '健康', family: '家人' };
+    const catLabelEn = { preference: 'Preference', habit: 'Habit', fact: 'Fact', event: 'Event', health: 'Health', family: 'Family' };
+    const isZh = state.lang === 'zh';
+    grid.innerHTML = data.map(m => `
+      <div class="card" style="padding:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px">
+          <span style="font-size:.7rem;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--bg);border:1px solid var(--border-app);color:var(--muted)">${isZh ? (catLabel[m.category] || m.category) : (catLabelEn[m.category] || m.category)} · ${m.importance}</span>
+          <button class="big-btn ghost" data-delmem="${m.id}" style="width:auto;min-width:0;padding:4px 8px;font-size:.75rem;color:var(--danger);border-color:var(--danger)">${isZh ? '忘了' : 'Forget'}</button>
+        </div>
+        <div style="font-size:.95rem;line-height:1.5">${escapeHtml(m.content)}</div>
+        <div class="text-soft" style="font-size:.7rem;margin-top:4px">${(m.created_at || '').substring(0, 10)}</div>
+      </div>
+    `).join('');
+    grid.querySelectorAll('[data-delmem]').forEach(b => b.onclick = async () => {
+      const id = b.dataset.delmem;
+      try {
+        await sb.from('agent_memories').delete().eq('id', id).eq('agent_id', state._agent.id);
+        if (state._agent) state._agent.memory_count = Math.max(0, (state._agent.memory_count || 0) - 1);
+        const card = document.getElementById('agentCard');
+        if (card) card.innerHTML = renderAgentCard(state._agent);
+        bindAgentCard();
+        refreshAgentMemories();
+        toast(state.lang==='zh' ? '已删除' : 'Deleted');
+      } catch (e) {
+        toast((state.lang==='zh'?'删除失败：':'Failed: ') + (e.message || e), true);
+      }
+    });
+  } catch (e) {
+    grid.innerHTML = `<div style="color:var(--danger);font-size:.85rem;grid-column:1/-1">${(e.message || e)}</div>`;
+  }
+}
+
+function bindAgentCard() {
+  if (!state._agent) return;
+  const copyBtn = document.getElementById('copyAgentCode');
+  if (copyBtn) copyBtn.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(state._agent.registration_code);
+      toast(state.lang==='zh' ? '已复制注册码' : 'Registration code copied');
+    } catch (e) {
+      const ta = document.createElement('textarea');
+      ta.value = state._agent.registration_code;
+      document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+      toast(state.lang==='zh' ? '已复制注册码' : 'Registration code copied');
+    }
+  };
+  const editSoul = document.getElementById('editSoulBtn');
+  if (editSoul) editSoul.onclick = async () => {
+    const isZh = state.lang === 'zh';
+    const next = await promptDialog({
+      title: isZh ? '编辑 soul.md' : 'Edit soul.md',
+      placeholder: isZh ? '修改你的 AI 人设 / 性格 / 行为' : 'Edit your AI personality / behavior',
+      defaultValue: state._agent.soul_md || ''
+    });
+    if (next == null) return;
+    try {
+      const r = await sb.rpc('ai_agent_set_soul', { p_soul_md: next });
+      if (r.error) throw r.error;
+      const row = Array.isArray(r.data) ? r.data[0] : r.data;
+      if (row) state._agent = { ...state._agent, ...row };
+      toast(isZh ? '灵魂已更新' : 'Soul updated');
+    } catch (e) {
+      try {
+        const r2 = await sb.from('ai_agents').update({ soul_md: next }).eq('user_id', sbUser.id).select('*').single();
+        if (r2.data) state._agent = { ...state._agent, ...r2.data };
+        toast(isZh ? '灵魂已更新' : 'Soul updated');
+      } catch (e2) {
+        toast((isZh ? '更新失败：' : 'Failed: ') + (e2.message || e2), true);
+      }
+    }
+  };
+  const reload = document.getElementById('reloadAgentBtn');
+  if (reload) reload.onclick = async () => {
+    const r = await sb.from('ai_agents').select('*').eq('user_id', sbUser.id).maybeSingle();
+    if (r.data) {
+      state._agent = r.data;
+      const el = document.getElementById('agentCard');
+      if (el) el.innerHTML = renderAgentCard(state._agent);
+      bindAgentCard();
+      refreshAgentMemories();
+    }
+  };
+  const refine = document.getElementById('refineSoulBtn');
+  if (refine) refine.onclick = () => refineMyAgent();
+  const addBtn = document.getElementById('addMemBtn');
+  const addInput = document.getElementById('addMemInput');
+  if (addBtn && addInput) {
+    const doAdd = async () => {
+      const content = (addInput.value || '').trim();
+      if (!content) return;
+      addInput.value = '';
+      try {
+        const subject_user_id = sbUser.id;
+        const ins = await sb.from('agent_memories').insert({
+          agent_id: state._agent.id,
+          subject_user_id,
+          category: 'fact',
+          content: content.substring(0, 500),
+          importance: 5,
+          source: 'manual'
+        }).select('id').single();
+        if (ins.error) throw ins.error;
+        if (state._agent) state._agent.memory_count = (state._agent.memory_count || 0) + 1;
+        const el = document.getElementById('agentCard');
+        if (el) el.innerHTML = renderAgentCard(state._agent);
+        bindAgentCard();
+        refreshAgentMemories();
+        toast(state.lang==='zh' ? '已记住' : 'Saved');
+      } catch (e) {
+        toast((state.lang==='zh' ? '保存失败：' : 'Save failed: ') + (e.message || e), true);
+      }
+    };
+    addBtn.onclick = doAdd;
+    addInput.onkeydown = (e) => { if (e.key === 'Enter') doAdd(); };
+  }
+  refreshAgentMemories();
+}
+
 // --- FINANCE --- (live data via Sina/Tencent/Yahoo, 3-source race)
 // Inspired by an older stock app: shows a hero card for gold + the
 // most-followed indices, a watchlist the user can add to, a search box
@@ -2968,8 +3295,8 @@ function renderScam(root) {
     setLoading(true);
     let result = null;
     let usedLlm = false;
-    let usedFallback = false;
-    // Try the LLM first.
+    let errorText = '';
+    // Use the LLM directly — no regex fallback.
     try {
       if (window.LiveData && window.LiveData.analyzeScamLLM) {
         const r = await window.LiveData.analyzeScamLLM(v, state.lang);
@@ -2977,35 +3304,39 @@ function renderScam(root) {
           result = r;
           usedLlm = true;
         } else {
-          // LLM failed or returned invalid output — fall back to regex.
-          usedFallback = true;
+          errorText = r?.error || (state.lang==='zh' ? 'AI 分析失败' : 'AI analysis failed');
         }
       } else {
-        usedFallback = true;
+        errorText = state.lang === 'zh' ? 'AI 组件未加载' : 'AI component not loaded';
       }
     } catch (e) {
       console.warn('LLM scam check failed:', e);
-      usedFallback = true;
+      errorText = state.lang === 'zh' ? 'AI 分析失败' : 'AI analysis failed';
     }
     if (!result) {
-      result = analyzeScam(v);
-      // Tag the source so the UI can show a small badge.
-      result._source = 'rules';
+      result = {
+        verdict: 'caution',
+        confidence: 0,
+        text: errorText,
+        reasons: [],
+        advice: { zh: '', en: '' },
+        _source: 'error'
+      };
     }
     renderScam._result = result;
     render();
     setLoading(false);
     // Save to Supabase
-    if (sbReady()) {
+    if (sbReady() && usedLlm) {
       try {
         await sb.from('scam_reports').insert({
           user_id: sbUser.id,
           input_text: v,
           verdict: renderScam._result.verdict,
           confidence: renderScam._result.confidence || null,
-          advice: (renderScam._result.advice && renderScam._result.advice[state.lang]) || null,
-          reasoning: (renderScam._result.reasons || []).map(r => r[state.lang]).join('; '),
-          source: usedLlm ? 'llm' : (usedFallback ? 'rules-fallback' : 'rules')
+          advice: (renderScam._result.text || '').slice(0, 500),
+          reasoning: '',
+          source: 'llm'
         });
       } catch(e) { console.warn('Scam report save failed:', e); }
     }
@@ -3021,19 +3352,23 @@ function renderVerdict(r) {
     : (r._source === 'rules'
         ? `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;background:var(--bg);color:var(--muted);border:1px solid var(--border-app);font-size:.7rem;font-weight:600">${state.lang==='zh'?'规则':'Rules'}</span>`
         : '');
+  const text = r.text || '';
+  const reasons = (r.reasons || []).map(x => '• ' + (state.lang === 'zh' ? (x.zh || x.en) : (x.en || x.zh))).join('');
+  const hasConfidence = typeof r.confidence === 'number' && r.confidence > 0;
   return `
     <div class="verdict-card ${v}">
       <div class="row">
         <div class="icon">${icon}</div>
         <div style="flex:1;min-width:0">
           <h3 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${vLabel}${sourceBadge}</h3>
-          <div class="confidence">${state.lang==='zh'?'原因':'Reasons'}: ${r.reasons.length}</div>
+          ${hasConfidence ? `<div class="confidence">${state.lang==='zh'?'可信度':'Confidence'}: ${Math.round(r.confidence*100)}%</div>` : ''}
         </div>
       </div>
-      <div class="advice">
-        <strong>${t('scamAdvice')}:</strong> ${r.advice[state.lang]}
-      </div>
-      <ul>${r.reasons.map(x => `<li>${x[state.lang]}</li>`).join('')}</ul>
+      ${text
+        ? `<div class="advice" style="white-space:pre-wrap">${escapeHtml(text)}</div>`
+        : `<div class="advice"><strong>${t('scamAdvice')}:</strong> ${(r.advice && r.advice[state.lang]) || ''}</div>
+           ${reasons ? `<ul>${reasons}</ul>` : ''}`
+      }
     </div>`;
 }
 
@@ -3546,23 +3881,23 @@ async function addReminderManual() {
 }
 
 // Simple text-input dialog (returns string or null)
-function promptDialog({ title, placeholder }) {
+function promptDialog({ title, placeholder, defaultValue }) {
   return new Promise(res => {
     const mask = document.getElementById('dialogMask');
     const dlg = document.getElementById('dialog');
     dlg.innerHTML = `
       <h3>${escapeHtml(title)}</h3>
-      <input id="promptInput" placeholder="${escapeHtml(placeholder||'')}" style="margin-bottom:20px">
+      <textarea id="promptInput" placeholder="${escapeHtml(placeholder||'')}" rows="6" style="margin-bottom:20px;width:100%;padding:10px;border-radius:8px;border:1px solid var(--border-app);font-size:.95rem;line-height:1.5;resize:vertical">${escapeHtml(defaultValue||'')}</textarea>
       <div class="actions">
         <button class="big-btn ghost" id="pCancel" style="width:auto;min-width:96px">${state.lang==='zh'?'取消':'Cancel'}</button>
         <button class="big-btn primary" id="pOk" style="width:auto;min-width:96px">${state.lang==='zh'?'确定':'OK'}</button>
       </div>`;
     mask.classList.add('open');
     const input = document.getElementById('promptInput');
-    setTimeout(() => input.focus(), 100);
-    input.onkeydown = e => { if (e.key === 'Enter') { mask.classList.remove('open'); res(input.value.trim()); } };
+    setTimeout(() => { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }, 100);
+    input.onkeydown = e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { mask.classList.remove('open'); res(input.value); } };
     document.getElementById('pCancel').onclick = () => { mask.classList.remove('open'); res(null); };
-    document.getElementById('pOk').onclick = () => { mask.classList.remove('open'); res(input.value.trim()); };
+    document.getElementById('pOk').onclick = () => { mask.classList.remove('open'); res(input.value); };
   });
 }
 
@@ -3723,6 +4058,14 @@ async function renderMe(root) {
       <p class="text-soft" style="font-size:.78rem;margin-top:10px;line-height:1.5">${state.lang==='zh'?'信用按 token 消耗：1 信用 = 1000 token（输入+输出合计），不是每条消息 1 信用。每日 00:00 自动补满。':'Credits are charged by token usage: 1 credit = 1000 tokens (input + output combined), not 1 credit per message. Refills daily at 00:00 local time.'}</p>
     </div>
 
+    <h3 style="font-size:1.1rem;margin:0 0 8px;display:flex;align-items:center;gap:8px">
+      <span style="display:inline-flex;width:24px;height:24px;border-radius:6px;background:linear-gradient(135deg,var(--primary),var(--cta));color:#fff;align-items:center;justify-content:center">${ICON.ai || '🤖'}</span>
+      ${state.lang==='zh'?'我的 AI 助手':'My AI Assistant'}
+    </h3>
+    <div class="card" style="padding:18px;margin-bottom:18px" id="agentCard">
+      ${renderAgentCard(state._agent)}
+    </div>
+
     <h3 style="font-size:1.1rem;margin:0 0 8px">${t('meLang')}</h3>
     <div class="card" style="padding:18px;display:flex;align-items:center;gap:12px;margin-bottom:24px">
       <div style="width:42px;height:42px;border-radius:12px;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center">${ICON.lang}</div>
@@ -3775,6 +4118,19 @@ async function renderMe(root) {
   const refreshBtn = document.getElementById('aiCreditsRefresh');
   if (refreshBtn) refreshBtn.onclick = refreshCredits;
   refreshCredits();
+
+  // AI Agent card (soul + memories). The agent may not be in memory yet
+  // on the very first render; ensure it is, then bind handlers. If the
+  // RPC isn't deployed yet, fall back to direct PostgREST insert.
+  if (!state._agent && sb && sbUser) {
+    ensureAgentForUser(sbUser.id).then(() => {
+      const el = document.getElementById('agentCard');
+      if (el && state._agent) el.innerHTML = renderAgentCard(state._agent);
+      bindAgentCard();
+    });
+  } else if (state._agent) {
+    bindAgentCard();
+  }
   // Amap key is pre-set in app-live.js (AMAP_WEB_KEY constant). No user input
   // needed. Keeping getMapConfig/setMapConfig for compatibility.
   const copyAcct = document.getElementById('copyAcctId');

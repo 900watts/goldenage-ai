@@ -119,29 +119,122 @@ serve(async (req) => {
     }, 402);
   }
 
-  // 3. Call SiliconFlow.
-  let completion;
-  try {
-    const r = await fetch(SILICONFLOW_URL, {
-      method: 'POST',
-      headers: {
-        'authorization': `Bearer ${SILICONFLOW_KEY}`,
-        'content-type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: SILICONFLOW_MODEL,
-        messages,
-        temperature: Number.isFinite(body?.temperature) ? body.temperature : 0.6,
-        max_tokens: Number.isFinite(body?.max_tokens) ? Math.min(body.max_tokens, 1024) : 512,
-        stream: false,
-        // Pass through tool definitions if the client sent them. Most
-        // SiliconFlow / OpenAI-compatible models (incl. Qwen3) honor
-        // `tools` + `tool_choice` and return `tool_calls` in the response.
-        ...(Array.isArray(body?.tools) && body.tools.length
-          ? { tools: body.tools, tool_choice: body.tool_choice || 'auto' }
-          : {})
-      })
-    });
+// 3. Build the system prompt: load the user's ai_agents row + top
+//    agent_memories + (for guardian users) recent activity of the
+//    paired elder. Then call SiliconFlow.
+let completion;
+try {
+  // 3a. Read the agent row.
+  const agentRes = await admin.from('ai_agents')
+    .select('id, name, role, soul_md, registration_code, subject_user_id_default')
+    .eq('user_id', userId)
+    .maybeSingle();
+  const agent = agentRes.data || null;
+  const agentRole: 'companion' | 'protector' = (agent?.role === 'protector') ? 'protector' : 'companion';
+
+  // 3b. Read the user's top memories.
+  const memRes = agent ? await admin.from('agent_memories')
+    .select('id, subject_user_id, category, content, importance, created_at')
+    .eq('agent_id', agent.id)
+    .order('importance', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(20) : { data: [] };
+  const memories: any[] = memRes.data || [];
+
+  // 3c. If the user is a guardian, find the paired elder and load the
+  //     last 24h of their activity (scam_reports, medication_schedules,
+  //     reminders, plus any memories the elder's AI has written about them).
+  let protectedElderContext = '';
+  if (agentRole === 'protector') {
+    // The pairing is stored on profiles (elder_account_id on the guardian
+    // row, or guardian_account_id on the elder row).
+    const profileRes = await admin.from('profiles')
+      .select('id, elder_account_id')
+      .eq('id', userId)
+      .maybeSingle();
+    const elderIdRaw = profileRes.data?.elder_account_id || null;
+    const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const elderId = (elderIdRaw && uuidRe.test(elderIdRaw)) ? elderIdRaw : null;
+    if (elderId) {
+      const since = new Date(Date.now() - 24 * 3600_000).toISOString();
+      // Run independent queries in parallel.
+      const [scamRes, remRes, elderMemRes, elderAgentRes, sosRes] = await Promise.all([
+        admin.from('scam_reports').select('created_at, input_text, verdict, advice')
+          .eq('user_id', elderId).gte('created_at', since).order('created_at', { ascending: false }).limit(10),
+        admin.from('reminders').select('label, kind, next_fire_at, fire_count, status')
+          .eq('user_id', elderId).in('status', ['scheduled', 'fired']).order('next_fire_at', { ascending: true }).limit(20),
+        // Memories the elder's AI has written ABOUT this elder.
+        admin.from('agent_memories').select('category, content, importance, created_at')
+          .eq('subject_user_id', elderId).order('importance', { ascending: false }).order('created_at', { ascending: false }).limit(10),
+        // Elder's agent info (so we can refer to them by their AI's name).
+        admin.from('ai_agents').select('name, role').eq('user_id', elderId).maybeSingle(),
+        // SOS events (if any) in the last 24h.
+        admin.from('sos_events').select('created_at, kind, resolved, note')
+          .eq('user_id', elderId).gte('created_at', since).order('created_at', { ascending: false }).limit(10).then(r => r).catch(() => ({ data: [] })),
+      ]);
+
+      // Also pull the user's own memories about THIS elder (the guardian's
+      // AI may have been writing notes like "Dad is allergic to penicillin").
+      const ownAboutElder = memories.filter(m => m.subject_user_id === elderId);
+
+      protectedElderContext = '\n\n## 你保护的长者近况（最近 24 小时 + 持久记忆）\n\n'
+        + `长者用户 id: ${elderId}\n`
+        + (elderAgentRes.data ? `长者端的 AI 名字: ${elderAgentRes.data.name}\n` : '')
+        + '\n### 对方 AI 记住的关于长者的事\n'
+        + (ownAboutElder.length
+            ? ownAboutElder.map(m => `- [${m.category}] ${m.content} (重要度 ${m.importance})`).join('\n')
+            : '（暂无）')
+        + '\n\n### 长者本人的记忆（长者端 AI 写下的）\n'
+        + (elderMemRes.data && elderMemRes.data.length
+            ? elderMemRes.data.map((m: any) => `- [${m.category}] ${m.content} (重要度 ${m.importance})`).join('\n')
+            : '（暂无）')
+        + '\n\n### 长者最近 24 小时的动态\n'
+        + '\n**防诈骗检测**:\n'
+        + (scamRes.data && scamRes.data.length
+            ? scamRes.data.map((r: any) => `- ${r.created_at} → ${r.verdict}（${(r.advice || '').substring(0, 60)}）`).join('\n')
+            : '（无）')
+        + '\n**用药与提醒**:\n'
+        + (remRes.data && remRes.data.length
+            ? remRes.data.map((r: any) => `- ${r.status} ${r.kind === 'daily' ? '每日' : '一次性'} 「${r.label}」（下次 ${r.next_fire_at}）`).join('\n')
+            : '（无）')
+        + '\n**SOS 求助**:\n'
+        + (sosRes.data && sosRes.data.length
+            ? sosRes.data.map((r: any) => `- ${r.created_at} ${r.kind} ${r.resolved ? '已处理' : '待处理'}${r.note ? ' 备注: ' + r.note : ''}`).join('\n')
+            : '（无）')
+        + '\n\n> 当守护者问"今天长者怎么样"或"我爸妈最近情况"时，**先根据上面这些数据回答**，再补充你自己的判断。'
+        + '\n> 简洁明了。突出"安全"和"异常"两类信息。';
+    }
+  }
+
+  // 3d. Build the augmented system prompt.
+  const userSystemMsg = messages.find((m: any) => m.role === 'system');
+  const userSystemContent = userSystemMsg?.content || '';
+  const baseSystem = buildLlmSystemPrompt(agent, memories, protectedElderContext);
+  const finalSystem = userSystemContent
+    ? `${baseSystem}\n\n---\n\n[APP_INJECTED_USER_SYSTEM_PROMPT]\n\n${userSystemContent}`
+    : baseSystem;
+  const finalMessages = [
+    { role: 'system', content: finalSystem },
+    ...messages.filter((m: any) => m.role !== 'system')
+  ];
+
+  const r = await fetch(SILICONFLOW_URL, {
+    method: 'POST',
+    headers: {
+      'authorization': `Bearer ${SILICONFLOW_KEY}`,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: SILICONFLOW_MODEL,
+      messages: finalMessages,
+      temperature: Number.isFinite(body?.temperature) ? body.temperature : 0.6,
+      max_tokens: Number.isFinite(body?.max_tokens) ? Math.min(body.max_tokens, 1024) : 512,
+      stream: false,
+      ...(Array.isArray(body?.tools) && body.tools.length
+        ? { tools: body.tools, tool_choice: body.tool_choice || 'auto' }
+        : {})
+    })
+  });
     if (!r.ok) {
       const detail = await r.text();
       // Refund the credit we just consumed (the call failed).
@@ -206,6 +299,12 @@ serve(async (req) => {
       } else if (name === 'cancel_reminder') {
         const r = await executeCancelReminder(admin, userId, args);
         toolResults.push({ name, args, result: r });
+      } else if (name === 'save_memory') {
+        const r = await executeSaveMemory(admin, userId, args);
+        toolResults.push({ name, args, result: r });
+      } else if (name === 'forget_memory') {
+        const r = await executeForgetMemory(admin, userId, args);
+        toolResults.push({ name, args, result: r });
       } else {
         // Client-side tools (navigate, open_*, trigger_sos, etc.) — the
         // client will execute them on receipt. We just echo back the call.
@@ -223,7 +322,9 @@ serve(async (req) => {
     usage: { prompt_tokens: inTokens, completion_tokens: outTokens, total_tokens: inTokens + outTokens, credits_used: realCredits },
     credits_remaining: cred.credits_remaining,
     credits_total:     cred.credits_total,
-    reset_at:          cred.reset_at
+    reset_at:          cred.reset_at,
+    agent: agent ? { id: agent.id, name: agent.name, role: agent.role, registration_code: agent.registration_code } : null,
+    memories_used: memories.length
   });
 });
 
@@ -342,4 +443,87 @@ async function executeCancelReminder(admin: any, userId: string, args: any) {
     .single();
   if (upd.error) return { error: upd.error.message };
   return { ok: true, reminder: upd.data };
+}
+
+// =====================================================================
+// System prompt builder: soul.md + memories + (for guardian) elder ctx
+// =====================================================================
+function buildLlmSystemPrompt(agent: any, memories: any[], elderCtx: string): string {
+  const role: 'companion' | 'protector' = (agent?.role === 'protector') ? 'protector' : 'companion';
+  const name = (agent?.name || '小金').toString();
+  const soul = (agent?.soul_md && agent.soul_md.trim().length > 0)
+    ? agent.soul_md
+    : (role === 'protector'
+        ? '你是一位守护者的 AI 助手。\n\n## 你的性格\n- 沉稳、值得信赖\n- 回答简洁，重点突出\n\n## 你能做什么\n- 查阅你最近记住的关于这位长者的记忆\n- 自动查询他/她最近 24 小时的动态（防诈骗检测、用药提醒、SOS）\n- 总结为一句话：今天老人做了什么、有没有需要关注的事\n\n## 红线\n- 不代替医生下诊断\n- 不透露老人未授权的隐私（银行卡、密码、住址）'
+        : '你是一位贴心的长者陪伴 AI。\n\n## 你的性格\n- 温和、有耐心、不急躁\n- 称呼对方"您"或用户告诉你的昵称\n- 说话简短明确，不用网络用语\n- 主动关心健康、作息、情绪\n\n## 你能做什么\n- 聊天、问候、提醒用药、量血压、关注天气\n- 帮助识别诈骗短信、陌生链接\n- 在用户让你"记住"某件事时，把它存进你的记忆区\n\n## 红线\n- 不引导用户在不明链接里输入银行卡号、验证码\n- 不代替医生开药、给诊断');
+
+  // Memories block (compact).
+  const memBlock = (memories && memories.length)
+    ? memories.map(m => `- [${m.category} 重要度${m.importance}] ${m.content}`).join('\n')
+    : '（暂无）';
+
+  return `你叫"${name}"。${soul}\n\n## 你已记住的事（memory.txt）\n${memBlock}${elderCtx}`;
+}
+
+// =====================================================================
+// Memory tool executors
+// =====================================================================
+async function executeSaveMemory(admin: any, userId: string, args: any) {
+  const content = String(args.content || args.fact || '').trim();
+  if (!content) return { error: 'Missing content' };
+  const category = String(args.category || 'fact');
+  const importance = Math.max(1, Math.min(10, parseInt(args.importance, 10) || 5));
+  // Find the agent row.
+  const agentRes = await admin.from('ai_agents')
+    .select('id, role')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (agentRes.error) return { error: agentRes.error.message };
+  if (!agentRes.data) return { error: 'No agent registered for this user' };
+  const agentId = agentRes.data.id;
+
+  // For protector agents, the memory is about their paired elder.
+  // For companion agents, the memory is about themselves (the user).
+  let subject_user_id = userId;
+  if (agentRes.data.role === 'protector') {
+    const profileRes = await admin.from('profiles')
+      .select('elder_account_id')
+      .eq('id', userId)
+      .maybeSingle();
+    const raw = profileRes.data?.elder_account_id;
+    if (raw) {
+      // elder_account_id is stored as text; agent_memories.subject_user_id
+      // is uuid. Validate before insert.
+      const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (uuidRe.test(raw)) subject_user_id = raw;
+    }
+  }
+
+  const ins = await admin.from('agent_memories').insert({
+    agent_id,
+    subject_user_id,
+    category,
+    content: content.substring(0, 500),
+    importance,
+    source: 'auto'
+  }).select('id, category, content, importance').single();
+  if (ins.error) return { error: ins.error.message };
+  return { ok: true, memory: ins.data };
+}
+
+async function executeForgetMemory(admin: any, userId: string, args: any) {
+  const id = String(args.id || args.memory_id || '').trim();
+  if (!id) return { error: 'Missing memory id' };
+  // Verify the memory belongs to this user (via their agent).
+  const agentRes = await admin.from('ai_agents')
+    .select('id')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (!agentRes.data) return { error: 'No agent' };
+  const del = await admin.from('agent_memories')
+    .delete()
+    .eq('id', id)
+    .eq('agent_id', agentRes.data.id);
+  if (del.error) return { error: del.error.message };
+  return { ok: true, id };
 }

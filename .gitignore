@@ -25,6 +25,8 @@ pubspec.lock
 # --- Secrets & local config -----------------------------------------
 .env
 .env.local
+# bin/*.mjs scripts read SUPABASE_MGMT_TOKEN from env; never hardcode tokens here
+bin/*.mjs
 **/google-services.json
 **/GoogleService-Info.plist
 **/key.properties

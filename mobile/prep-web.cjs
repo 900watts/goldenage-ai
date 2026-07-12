@@ -13,6 +13,14 @@ for (const f of ['app.js', 'app-live.js']) {
   fs.copyFileSync(path.join(root, f), path.join(www, f));
 }
 
+// 1b) agent-souls directory (default soul.md templates)
+const soulsSrc = path.join(root, 'assets', 'agent-souls');
+const soulsDst = path.join(www, 'agent-souls');
+fs.mkdirSync(soulsDst, { recursive: true });
+for (const f of fs.readdirSync(soulsSrc)) {
+  fs.copyFileSync(path.join(soulsSrc, f), path.join(soulsDst, f));
+}
+
 // 2) index.html = app.html with the CDN supabase script replaced by local vendor
 let html = fs.readFileSync(path.join(root, 'app.html'), 'utf8');
 const cdnRe = /<script src="https:\/\/cdn\.jsdelivr\.net\/npm\/@supabase\/supabase-js@2"><\/script>/;

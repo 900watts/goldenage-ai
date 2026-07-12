@@ -480,9 +480,19 @@ label.field-label{display:block;font-weight:600;margin-bottom:8px;font-size:1rem
 /* === QUOTE === */
 .quote-row{display:flex;align-items:center;gap:10px;padding:12px 0}
 .quote-row .dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
-.quote-row .qname{flex:1;font-weight:500}
-.quote-row .qprice{font-family:'Lexend',inherit;font-weight:800;font-size:1.2rem}
+.quote-row .qname{flex:1;font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.quote-row .qprice{font-family:'Lexend',inherit;font-weight:800;font-size:1.2rem;white-space:nowrap}
+.quote-row.top{padding:14px 16px 8px}
+.quote-row.sub{padding:4px 16px 8px;border-top:1px solid var(--border-app)}
+.quote-row.sub .quote-id{font-family:monospace;font-size:.72rem;color:var(--muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.quote-row.sub .quote-chg{font-size:.9rem;font-variant-numeric:tabular-nums}
 .up{color:var(--danger)} .down{color:var(--safe)}
+.quote-card{padding:0;overflow:hidden;display:flex;flex-direction:column;gap:0}
+.quote-card.hero{border:2px solid var(--primary);background:linear-gradient(135deg,var(--bg),#fff);box-shadow:var(--elev-1)}
+.quote-card .quote-spark{display:block;margin:0 12px 8px;background:linear-gradient(180deg,transparent,rgba(13,148,136,.04));border-radius:8px}
+.quote-ai{background:linear-gradient(135deg,var(--primary),var(--cta));color:#fff;border:none;font-weight:600;border-radius:0 0 18px 18px;padding:12px;font-size:.9rem;display:flex;align-items:center;justify-content:center;gap:6px;transition:opacity .2s;margin:0}
+.quote-ai:hover{opacity:.9}
+.quote-ai:disabled{opacity:.5;cursor:not-allowed}
 
 /* === NEWS === */
 .news-grid{display:grid;grid-template-columns:1fr;gap:18px}

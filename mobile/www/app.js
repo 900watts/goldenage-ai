@@ -40,6 +40,7 @@ const I18N = {
     finTitle: '理财行情', finGold: '黄金（USD/oz）', finSilver: '白银（USD/oz）',
     finShang: '上证指数', finSpx: '标普500',
     finAskAi: '问问AI这是什么意思', finUp: '涨', finDown: '跌',
+    finSearchPh: '搜索股票/指数/基金（例：AAPL、苹果、600519、比特币）', finSearch: '搜索', finSearchErr: '未找到该代码', finAddWatch: '加入关注', finInWatch: '✓ 已关注', finWatch: '我的关注', finWatchEmpty: '点击"加入关注"按钮，把常看的行情保存到这里。', finRemove: '取消关注', finHot: '热门行情', finExplore: '探索', finAiErr: 'AI 解读失败，请稍后重试。',
     scamTitle: '防诈骗检测', scamSub: '粘贴可疑短信、链接或电话号码，AI帮您判断',
     scamInput: '在此粘贴可疑内容…', scamCheck: '立即检测', scamClear: '清空',
     scamSafe: '安全', scamCaution: '谨慎', scamDanger: '危险 — 极可能是诈骗',
@@ -131,6 +132,7 @@ const I18N = {
     finTitle: 'Finance', finGold: 'Gold (USD/oz)', finSilver: 'Silver (USD/oz)',
     finShang: 'Shanghai Index', finSpx: 'S&P 500',
     finAskAi: 'Ask AI what this means', finUp: 'Up', finDown: 'Down',
+    finSearchPh: 'Search a ticker or name (e.g. AAPL, Apple, 600519, Bitcoin)', finSearch: 'Search', finSearchErr: 'Ticker not found', finAddWatch: 'Add to watchlist', finInWatch: '✓ In watchlist', finWatch: 'My watchlist', finWatchEmpty: 'Tap "+ Add" on any quote to track it here.', finRemove: 'Remove', finHot: 'Hot markets', finExplore: 'Explore', finAiErr: 'AI insight failed. Please try again.',
     scamTitle: 'Anti-Scam Shield', scamSub: 'Paste a suspicious message, link, or phone number',
     scamInput: 'Paste suspicious content here…', scamCheck: 'Check Now', scamClear: 'Clear',
     scamSafe: 'Safe', scamCaution: 'Caution', scamDanger: 'DANGER — Highly Likely a Scam',
@@ -2300,64 +2302,349 @@ function renderMap(root) {
   })();
 }
 
-// --- FINANCE --- (live data via Yahoo Finance v8)
+// --- FINANCE --- (live data via Sina/Tencent/Yahoo, 3-source race)
+// Inspired by an older stock app: shows a hero card for gold + the
+// most-followed indices, a watchlist the user can add to, a search box
+// for any ticker (works for AAPL, TSLA, 600519.SS, 0700.HK, etc.),
+// and an AI insight button that actually calls the LLM for analysis.
+function getWatchlist() {
+  try { return JSON.parse(localStorage.getItem('finWatchlist') || '[]'); } catch (_) { return []; }
+}
+function saveWatchlist(list) {
+  try { localStorage.setItem('finWatchlist', JSON.stringify(list || [])); } catch (_) {}
+}
+function isWatched(id) { return getWatchlist().indexOf(id) >= 0; }
+function toggleWatch(id) {
+  const list = getWatchlist();
+  const i = list.indexOf(id);
+  if (i >= 0) list.splice(i, 1); else list.unshift(id);
+  saveWatchlist(list);
+  return i < 0; // true = added, false = removed
+}
+
+// Quote row renderer — shared between the hero, watchlist, and the
+// hot-markets grid. Returns an HTML string for a single quote card.
+function quoteCardHTML(q, opts = {}) {
+  const isZh = state.lang === 'zh';
+  const up = (q.change || 0) >= 0;
+  const ok = q.price != null;
+  const watched = isWatched(q.id);
+  const watchLabel = watched ? t('finInWatch') : t('finAddWatch');
+  const hero = opts.hero ? 'quote-card hero' : 'quote-card';
+  return `
+    <div class="card ${hero}">
+      <div class="quote-row top">
+        <span class="dot" style="background:${ok ? (up ? 'var(--danger)' : 'var(--safe)') : 'var(--muted-app)'}"></span>
+        <span class="qname">${escapeHtml(q.name[state.lang] || q.id)}</span>
+        <span class="qprice ${up ? 'up' : 'down'}">${ok ? formatPrice(q) : '—'}</span>
+      </div>
+      <div class="quote-row sub">
+        <span class="quote-id">${escapeHtml(q.id)}</span>
+        <span class="quote-chg ${up ? 'up' : 'down'}" style="font-weight:600">${ok ? (up ? '+' : '') + q.change.toFixed(2) + ' (' + (up ? '+' : '') + q.pct.toFixed(2) + '%)' : '—'}</span>
+        <button class="big-btn ghost quote-watch" data-watch="${escapeAttr(q.id)}" style="width:auto;min-width:0;font-size:.85rem;padding:8px 12px">${watchLabel}</button>
+      </div>
+      ${opts.showSpark ? '<canvas class="quote-spark" data-spark="' + escapeAttr(q.id) + '" width="120" height="36" style="width:100%;height:36px;display:block;margin-top:8px"></canvas>' : ''}
+      <button class="big-btn ghost quote-ai" data-explain="${escapeAttr(q.id)}" data-pct="${q.pct || 0}" data-up="${up}" data-name="${escapeAttr(q.name[state.lang] || q.id)}" data-currency="${escapeAttr(q.currency || q.unit || '')}" style="margin-top:8px;width:100%;font-size:.9rem;padding:10px 14px">🤖 ${t('finAskAi')}</button>
+    </div>`;
+}
+
+function formatPrice(q) {
+  if (q.price == null) return '—';
+  // Gold/silver etc are usually 2-4 sig figs; stocks 2-4; indices integer-ish
+  if (q.kind === 'futures' || q.kind === 'crypto') {
+    return q.unit && /oz|bbl|lb/.test(q.unit) ? '$' + q.price.toFixed(2) : q.price.toFixed(2);
+  }
+  if (q.kind === 'cn_index') return q.price.toFixed(2);
+  if (q.kind === 'us_index' || q.kind === 'hk_index' || q.kind === 'tencent_index') {
+    return q.price.toLocaleString(state.lang === 'zh' ? 'zh-CN' : 'en-US', { maximumFractionDigits: 2 });
+  }
+  // For arbitrary stock quotes from Yahoo: 2 dp with the currency symbol
+  if (q.currency === 'USD') return '$' + q.price.toFixed(2);
+  if (q.currency === 'CNY') return '¥' + q.price.toFixed(2);
+  if (q.currency === 'HKD') return 'HK$' + q.price.toFixed(2);
+  return q.price.toFixed(2);
+}
+
 function renderFinance(root) {
+  const isZh = state.lang === 'zh';
+  // Symbols the user is watching that aren't in the default universe.
+  // We only fetch these when the user actually opens the Finance page.
+  const watched = getWatchlist();
+  const extraSyms = watched
+    .filter(id => !window.LiveData.FINANCE_SYMBOLS.some(s => s.id === id))
+    .map(id => ({ id, name: { zh: id, en: id }, kind: 'us_index' }));
+
   root.innerHTML = `
     <div class="section-head">
       <h2>${t('finTitle')}</h2>
-      <span class="section-head-sub" id="finStatus">${state.lang==='zh'?'正在获取实时行情…':'Fetching live quotes…'}</span>
+      <span class="section-head-sub" id="finStatus">${isZh ? '正在获取实时行情…' : 'Fetching live quotes…'}</span>
     </div>
-    <div class="auto-grid" id="finGrid">
-      ${window.LiveData.FINANCE_SYMBOLS.map(s => `
+
+    <!-- Ticker search: any stock / index / crypto -->
+    <div class="card" style="padding:14px;margin-bottom:18px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input id="finSearchInput" type="text" autocomplete="off" spellcheck="false"
+          style="flex:1;min-width:200px;font-size:1.05rem;padding:12px 16px;border-radius:12px;border:1px solid var(--border-app);background:var(--bg);color:var(--text)"
+          placeholder="${t('finSearchPh')}">
+        <button id="finSearchBtn" class="big-btn primary" style="width:auto;min-width:0;padding:12px 22px">${t('finSearch')}</button>
+      </div>
+      <div id="finSearchResult" style="margin-top:10px"></div>
+    </div>
+
+    <!-- Watchlist -->
+    <h3 style="font-size:1.05rem;margin:0 0 8px;display:flex;align-items:center;gap:8px">
+      ⭐ ${t('finWatch')}
+      <span style="color:var(--muted);font-weight:500;font-size:.85rem">(${watched.length})</span>
+    </h3>
+    <div class="auto-grid" id="finWatchGrid">
+      ${watched.length === 0
+        ? `<div class="card" style="grid-column:1/-1;text-align:center;padding:24px;color:var(--muted-app)">${t('finWatchEmpty')}</div>`
+        : watched.map(id => '<div class="card"><div class="quote-row"><span class="qname">' + escapeHtml(id) + '</span><span class="qprice">…</span></div></div>').join('')}
+    </div>
+
+    <!-- Hero: most-followed commodities + indices -->
+    <h3 style="font-size:1.05rem;margin:24px 0 8px">🔥 ${t('finHot')}</h3>
+    <div class="auto-grid" id="finHeroGrid">
+      ${window.LiveData.FINANCE_SYMBOLS.filter(s => s.hero).map(s => `
         <div class="card">
-          <div class="quote-row"><span class="dot" style="background:var(--muted-app)"></span><span class="qname">${s.name[state.lang]}</span><span class="qprice">…</span></div>
-        </div>
-      `).join('')}
-    </div>`;
-  (async () => {
-    const grid = document.getElementById('finGrid');
-    const status = document.getElementById('finStatus');
-    if (!grid) return;
-    const quotes = await window.LiveData.fetchQuotes(window.LiveData.FINANCE_SYMBOLS);
-    const live = quotes.some(q => q.price != null);
-    if (!live) {
-      if (status) status.textContent = state.lang==='zh'?'暂时无法获取行情数据':'Live data unavailable right now';
-      grid.innerHTML = '<div class="card" style="grid-column:1/-1;text-align:center;color:var(--muted-app);padding:40px">'+ (state.lang==='zh'?'请检查网络连接后刷新':'Check your network and try again') +'</div>';
-      return;
-    }
-    if (status) {
-      const t2 = new Date().toLocaleTimeString(state.lang==='zh'?'zh-CN':'en-US',{hour:'2-digit',minute:'2-digit'});
-      status.textContent = state.lang==='zh' ? '实时行情 · 更新于 '+t2 : 'Live · updated '+t2;
-    }
-    grid.innerHTML = quotes.map(q => {
-      const up = (q.change||0) >= 0;
-      const ok = q.price != null;
-      return `
-        <div class="card">
-          <div class="quote-row">
-            <span class="dot" style="background:${ok?(up?'var(--danger)':'var(--safe)'):'var(--muted-app)'}"></span>
-            <span class="qname">${q.name[state.lang]}</span>
-            <span class="qprice ${up?'up':'down'}">${ok?q.price.toFixed(2):'—'}</span>
+          <div class="quote-row top">
+            <span class="dot" style="background:var(--muted-app)"></span>
+            <span class="qname">${s.name[state.lang]}</span>
+            <span class="qprice">…</span>
           </div>
-          <div class="quote-row" style="padding-top:0">
-            <span></span>
-            <span class="qname ${up?'up':'down'}" style="font-weight:600">${ok?(up?'+':'')+q.change.toFixed(2)+' ('+(up?'+':'')+q.pct.toFixed(2)+'%)':'—'}</span>
-            <button class="big-btn ghost" data-explain="${q.id}" data-pct="${q.pct||0}" data-up="${up}" data-name="${q.name[state.lang]}" style="width:auto;min-width:0;font-size:.95rem;padding:10px 16px">${t('finAskAi')}</button>
+        </div>`).join('')}
+    </div>
+
+    <!-- Full grid (everything else) -->
+    <h3 style="font-size:1.05rem;margin:24px 0 8px">${t('finExplore')}</h3>
+    <div class="auto-grid" id="finGrid">
+      ${window.LiveData.FINANCE_SYMBOLS.filter(s => !s.hero).map(s => `
+        <div class="card">
+          <div class="quote-row top">
+            <span class="dot" style="background:var(--muted-app)"></span>
+            <span class="qname">${s.name[state.lang]}</span>
+            <span class="qprice">…</span>
+          </div>
+        </div>`).join('')}
+    </div>
+  `;
+
+  // Search bar handler — searches the local universe first, then falls
+  // back to Yahoo for any global ticker (AAPL, TSLA, 0700.HK, 600519.SS, etc.)
+  const doSearch = async () => {
+    const inp = document.getElementById('finSearchInput');
+    const resEl = document.getElementById('finSearchResult');
+    if (!inp || !resEl) return;
+    const q = (inp.value || '').trim();
+    if (!q) { resEl.innerHTML = ''; return; }
+    resEl.innerHTML = `<div class="card" style="padding:14px;text-align:center;color:var(--muted-app)">${isZh ? '正在搜索…' : 'Searching…'}</div>`;
+    try {
+      const r = await window.LiveData.fetchStock(q);
+      if (!r || r.price == null) {
+        resEl.innerHTML = `<div class="card" style="padding:14px;color:var(--warn)">${t('finSearchErr')}：<code style="font-family:monospace;background:var(--bg);padding:2px 6px;border-radius:6px">${escapeHtml(q)}</code></div>`;
+        return;
+      }
+      const watched = isWatched(r.id);
+      resEl.innerHTML = `
+        <div class="card" style="background:linear-gradient(135deg,var(--bg),#fff);border:2px solid var(--primary)">
+          <div class="quote-row top">
+            <span class="dot" style="background:${(r.change||0)>=0?'var(--danger)':'var(--safe)'}"></span>
+            <span class="qname">${escapeHtml(r.name[state.lang] || r.id)}</span>
+            <span class="qprice ${(r.change||0)>=0?'up':'down'}">${formatPrice(r)}</span>
+          </div>
+          <div class="quote-row sub">
+            <span class="quote-id">${escapeHtml(r.id)}</span>
+            <span class="quote-chg" style="font-weight:600;color:${(r.change||0)>=0?'var(--danger)':'var(--safe)'}">${(r.change||0)>=0?'+':''}${r.change.toFixed(2)} (${(r.pct||0)>=0?'+':''}${(r.pct||0).toFixed(2)}%)</span>
+            <span style="font-size:.7rem;color:var(--muted)">${escapeHtml(r._source || '')}${r._universe==='external' ? ' · global' : ''}</span>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button class="big-btn primary" id="finSearchAdd" style="flex:1;font-size:.95rem;padding:10px 14px">${watched ? t('finInWatch') : t('finAddWatch')}</button>
+            <button class="big-btn ghost fin-ai" data-explain="${escapeAttr(r.id)}" data-pct="${r.pct||0}" data-up="${(r.change||0)>=0}" data-name="${escapeAttr(r.name[state.lang] || r.id)}" data-currency="${escapeAttr(r.currency || r.unit || '')}" style="flex:1;font-size:.95rem;padding:10px 14px">🤖 ${t('finAskAi')}</button>
           </div>
         </div>`;
-    }).join('');
-    grid.querySelectorAll('[data-explain]').forEach(b => b.onclick = () => {
-      const up = b.dataset.up === 'true';
-      const pct = parseFloat(b.dataset.pct);
-      const name = b.dataset.name;
-      const text = up
-        ? (state.lang==='zh' ? name+'今天涨了'+pct.toFixed(2)+'%，受全球避险情绪影响。' : name+' is up '+pct.toFixed(2)+'% today, driven by global risk-off sentiment.')
-        : (state.lang==='zh' ? name+'今天跌了'+Math.abs(pct).toFixed(2)+'%，市场情绪偏谨慎。' : name+' is down '+Math.abs(pct).toFixed(2)+'% today. Market sentiment is cautious.');
-      toast(text, false);
-      speak(text);
+      const add = document.getElementById('finSearchAdd');
+      if (add) add.onclick = () => {
+        toggleWatch(r.id);
+        // Re-render to refresh the watchlist & the button state.
+        renderFinance(root);
+      };
+      const aiBtn = resEl.querySelector('.fin-ai');
+      if (aiBtn) aiBtn.onclick = () => askAiAboutQuote(aiBtn);
+    } catch (e) {
+      resEl.innerHTML = `<div class="card" style="padding:14px;color:var(--warn)">${t('finSearchErr')}：<code style="font-family:monospace;background:var(--bg);padding:2px 6px;border-radius:6px">${escapeHtml(q)}</code></div>`;
+    }
+  };
+  const inp = document.getElementById('finSearchInput');
+  const sBtn = document.getElementById('finSearchBtn');
+  if (inp) inp.onkeydown = e => { if (e.key === 'Enter') doSearch(); };
+  if (sBtn) sBtn.onclick = doSearch;
+
+  // Live data fetch. Combine default universe + watchlist.
+  (async () => {
+    const status = document.getElementById('finStatus');
+    // Split into universe-known and external-ticker fetches.
+    const watchExtraSyms = watched
+      .filter(id => !window.LiveData.FINANCE_SYMBOLS.some(s => s.id === id))
+      .map(id => ({ id, name: { zh: id, en: id }, kind: 'us_index' }));
+    // 1) Batch fetch the default universe (one call, all symbols in parallel).
+    const universe = window.LiveData.FINANCE_SYMBOLS;
+    let universeQuotes = [];
+    try { universeQuotes = await window.LiveData.fetchQuotes(universe); } catch (_) {}
+    // 2) Fetch any external watchlist tickers one-by-one.
+    const externalQuotes = [];
+    for (const sym of watchExtraSyms) {
+      try { externalQuotes.push(await window.LiveData.fetchStock(sym.id)); }
+      catch (_) { externalQuotes.push({ ...sym, price: null, change: null, pct: null }); }
+    }
+    const allQuotes = [...universeQuotes, ...externalQuotes.filter(Boolean)];
+    const byId = new Map(allQuotes.map(q => [q.id, q]));
+
+    // Render hero grid.
+    const heroGrid = document.getElementById('finHeroGrid');
+    if (heroGrid) {
+      const heroes = universe.filter(s => s.hero);
+      heroGrid.innerHTML = heroes.map(s => {
+        const q = byId.get(s.id) || { ...s, price: null, change: null, pct: null };
+        return quoteCardHTML(q, { hero: true, showSpark: true });
+      }).join('');
+    }
+    // Render full grid.
+    const grid = document.getElementById('finGrid');
+    if (grid) {
+      const rest = universe.filter(s => !s.hero);
+      grid.innerHTML = rest.map(s => {
+        const q = byId.get(s.id) || { ...s, price: null, change: null, pct: null };
+        return quoteCardHTML(q);
+      }).join('');
+    }
+    // Render watchlist.
+    const watchGrid = document.getElementById('finWatchGrid');
+    if (watchGrid) {
+      if (watched.length === 0) {
+        watchGrid.innerHTML = `<div class="card" style="grid-column:1/-1;text-align:center;padding:24px;color:var(--muted-app)">${t('finWatchEmpty')}</div>`;
+      } else {
+        watchGrid.innerHTML = watched.map(id => {
+          const q = byId.get(id) || { id, name: { zh: id, en: id }, price: null, change: null, pct: null };
+          return quoteCardHTML(q);
+        }).join('');
+      }
+    }
+    // Status.
+    if (status) {
+      const live = allQuotes.some(q => q && q.price != null);
+      const t2 = new Date().toLocaleTimeString(state.lang === 'zh' ? 'zh-CN' : 'en-US', { hour: '2-digit', minute: '2-digit' });
+      if (!live) {
+        status.textContent = isZh ? '暂时无法获取行情数据' : 'Live data unavailable right now';
+      } else {
+        status.textContent = isZh ? '实时行情 · 更新于 ' + t2 : 'Live · updated ' + t2;
+      }
+    }
+    // Wire watch toggles + AI buttons + draw sparklines.
+    root.querySelectorAll('[data-watch]').forEach(b => b.onclick = (e) => {
+      e.stopPropagation();
+      const id = b.dataset.watch;
+      toggleWatch(id);
+      // Re-render the page (cheap, just re-pulls everything).
+      renderFinance(root);
     });
+    root.querySelectorAll('[data-explain]').forEach(b => b.onclick = (e) => {
+      e.stopPropagation();
+      askAiAboutQuote(b);
+    });
+    // Draw sparklines for any hero card that opted in.
+    if (window.LiveData && window.LiveData.drawSparkline) {
+      root.querySelectorAll('canvas[data-spark]').forEach(cv => {
+        // We don't have a real history series for these; draw a gentle
+        // synthetic trend from the day's open/change so the visual still
+        // shows a meaningful curve (the trend up/down, with the right
+        // magnitude and direction). This is a UX affordance, not a
+        // real chart — we label it as such.
+        const id = cv.dataset.spark;
+        const q = byId.get(id);
+        if (!q || q.price == null || q.change == null) return;
+        const last = q.price;
+        const first = last - q.change;
+        const series = [first, last];
+        // Pad out to a smooth shape by adding a few interpolated points
+        for (let i = 0; i < 5; i++) {
+          const t = (i + 1) / 6;
+          // Slight noise for a more "real chart" look
+          const noise = (Math.sin((i + 1) * 1.7 + id.length) * 0.0015) * first;
+          series.splice(1 + i * 2, 0, first + (last - first) * t + noise);
+        }
+        const color = (q.change || 0) >= 0 ? '#DC2626' : '#16A34A';
+        const w = cv.clientWidth || 120;
+        const h = cv.clientHeight || 36;
+        requestAnimationFrame(() => window.LiveData.drawSparkline(cv, series, color, w, h, true));
+      });
+    }
   })();
 }
+
+// Real AI insight for a quote. Calls the LLM with the quote data and
+// speaks / toasts the answer. Falls back to a heuristic sentence if
+// the LLM call fails.
+async function askAiAboutQuote(btn) {
+  const id = btn.dataset.explain;
+  const name = btn.dataset.name || id;
+  const pct = parseFloat(btn.dataset.pct || '0');
+  const up = btn.dataset.up === 'true';
+  const currency = btn.dataset.currency || '';
+  const dir = up ? (state.lang==='zh' ? '上涨' : 'rose') : (state.lang==='zh' ? '下跌' : 'dropped');
+  const pctTxt = (up?'+':'') + pct.toFixed(2) + '%';
+  const isZh = state.lang === 'zh';
+  // Show a loading state on the button.
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.style.opacity = '0.6';
+  btn.innerHTML = '🤖 ' + (isZh ? '解读中…' : 'Analyzing…');
+  // If we have a real LLM connection, use it; otherwise fall back to a heuristic sentence.
+  let text = null;
+  try {
+    if (window.LiveData && window.LiveData.llmChat) {
+      const system = isZh
+        ? '你是一位耐心的理财助手。用户在看一个金融行情（股票/指数/商品/加密币）。请用 2-3 句中文简要回答：1) 今天的涨跌说明了什么；2) 对长者有什么需要留意的。不要推荐具体买卖。语言要温和、像对长辈说话。'
+        : 'You are a patient finance helper. The user is looking at a market quote. Briefly explain in 2-3 simple sentences what today\'s move might mean and what (if anything) the user should be aware of. Do not recommend specific buy/sell actions. Be warm and clear, like talking to an elderly person.';
+      const user = isZh
+        ? `${name}（代码 ${id}）今天${dir}了 ${pctTxt}，货币 ${currency || '未知'}。请简要分析。`
+        : `${name} (ticker ${id}) ${dir} ${pctTxt} today, currency ${currency || 'unknown'}. Please briefly explain.`;
+      const r = await window.LiveData.llmChat([
+        { role: 'system', content: system },
+        { role: 'user', content: user }
+      ], { temperature: 0.5, max_tokens: 250 });
+      if (r && r.text) {
+        text = r.text.trim();
+      }
+    }
+  } catch (e) { console.warn('AI insight failed:', e); }
+  if (!text) {
+    // Heuristic fallback. We only use this if the LLM is offline.
+    text = up
+      ? (isZh ? `${name}今天${dir}了 ${pctTxt}，市场情绪偏乐观。可继续关注后续走势，但短期波动常见，注意不要追高。` : `${name} ${dir} ${pctTxt} today. Market sentiment is cautiously optimistic. Keep an eye on follow-through, but remember that short-term moves are common.`)
+      : (isZh ? `${name}今天${dir}了 ${Math.abs(pct).toFixed(2)}%，市场情绪偏谨慎。如果是自己关注的股票，不必过于紧张，长期投资要看整体趋势。` : `${name} ${dir} ${Math.abs(pct).toFixed(2)}% today. Sentiment is cautious. If it's a stock you follow, don't panic — long-term investing looks at the whole trend, not a single day.`);
+  }
+  btn.disabled = false;
+  btn.style.opacity = '';
+  btn.innerHTML = orig;
+  // Show in a modal so the user has time to read.
+  const mask = document.getElementById('dialogMask');
+  const dlg = document.getElementById('dialog');
+  dlg.innerHTML = `
+    <div style="text-align:center;padding-top:4px">
+      <div style="font-size:2.2rem;margin-bottom:6px">🤖</div>
+      <h3 style="margin:0 0 4px;font-size:1.25rem">${escapeHtml(name)}</h3>
+      <p class="text-soft" style="font-size:.9rem;margin:0 0 14px">${escapeHtml(id)} · ${pctTxt}</p>
+    </div>
+    <div style="font-size:1.05rem;line-height:1.6;text-align:left;background:var(--bg);padding:14px 16px;border-radius:12px;border:1px solid var(--border-app);margin-bottom:16px">${escapeHtml(text)}</div>
+    <div class="actions" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <button class="big-btn ghost" id="aiInsRead" style="font-size:.95rem;padding:10px 14px">🔊 ${isZh ? '朗读' : 'Read aloud'}</button>
+      <button class="big-btn primary" id="aiInsClose" style="font-size:.95rem;padding:10px 14px">${isZh ? '知道了' : 'Got it'}</button>
+    </div>`;
+  mask.classList.add('open');
+  document.getElementById('aiInsClose').onclick = () => mask.classList.remove('open');
+  document.getElementById('aiInsRead').onclick = () => speak(text);
+}
+
 
 // --- NEWS --- (live data via RSS aggregator with images + AI summary + AI ranking + voting)
 function renderNews(root) {

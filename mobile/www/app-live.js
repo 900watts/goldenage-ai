@@ -16,18 +16,168 @@ const _UA = 'Mozilla/5.0 (GoldenAge/1.0)';
 //   For futures (hf_GC, hf_SI): [name, current, prev, open, high, low, time, ...]
 //   So the current/prev indices differ by symbol type.
 const FINANCE_SYMBOLS = [
-  // Tencent-first codes (browser-friendly), Sina codes kept for desktop tools.
-  // [sinaCode, tencentCode, id, name, unit, kind]
-  { sina: 'hf_GC',     tencent: 'hf_GC',     id: 'GC=F',     name: { zh: '黄金 (USD/oz)',  en: 'Gold (USD/oz)' },       unit: 'USD/oz',  kind: 'futures' },
-  { sina: 'hf_SI',     tencent: 'hf_SI',     id: 'SI=F',     name: { zh: '白银 (USD/oz)',  en: 'Silver (USD/oz)' },     unit: 'USD/oz',  kind: 'futures' },
-  { sina: 'sh000001',  tencent: 'sh000001',  id: '000001.SS',name: { zh: '上证指数',         en: 'Shanghai Composite' },   unit: 'CNY',     kind: 'cn_index' },
-  { sina: 'sz399001',  tencent: 'sz399001',  id: '399001.SZ',name: { zh: '深证成指',         en: 'Shenzhen Component' },  unit: 'CNY',     kind: 'cn_index' },
-  { sina: 'sz399006',  tencent: 'sz399006',  id: '399006.SZ',name: { zh: '创业板指',         en: 'ChiNext' },             unit: 'CNY',     kind: 'cn_index' },
-  { sina: 'hkHSI',     tencent: 'hkHSI',     id: '^HSI',     name: { zh: '恒生指数',         en: 'Hang Seng' },           unit: 'HKD',     kind: 'hk_index' },
-  { sina: 'int_nasdaq',tencent: 'usIXIC',    id: '^IXIC',    name: { zh: '纳斯达克',         en: 'NASDAQ' },              unit: 'USD',     kind: 'tencent_index' },
-  { sina: 'int_dji',   tencent: 'usDJI',     id: '^DJI',     name: { zh: '道琼斯',           en: 'Dow Jones' },           unit: 'USD',     kind: 'tencent_index' },
-  { sina: 'int_sp500', tencent: 'usINX',     id: '^GSPC',    name: { zh: '标普500',         en: 'S&P 500' },             unit: 'USD',     kind: 'tencent_index' },
+  // --- Commodities (the old stock app's hero) ---
+  { sina: 'hf_GC',     tencent: 'hf_GC',     id: 'GC=F',     name: { zh: '黄金 (USD/oz)',  en: 'Gold (USD/oz)' },       unit: 'USD/oz',  kind: 'futures',  hero: true,
+    aliases: { zh: ['黄金','金价','gold','xau','国际金价'], en: ['gold','xau'] } },
+  { sina: 'hf_SI',     tencent: 'hf_SI',     id: 'SI=F',     name: { zh: '白银 (USD/oz)',  en: 'Silver (USD/oz)' },     unit: 'USD/oz',  kind: 'futures',
+    aliases: { zh: ['白银','银价','silver','xag'], en: ['silver','xag'] } },
+  { sina: 'hf_PL',     tencent: 'hf_PL',     id: 'PL=F',     name: { zh: '铂金 (USD/oz)',  en: 'Platinum (USD/oz)' },   unit: 'USD/oz',  kind: 'futures',
+    aliases: { zh: ['铂金','platinum','xpt'], en: ['platinum','xpt'] } },
+  { sina: 'hf_PD',     tencent: 'hf_PD',     id: 'PD=F',     name: { zh: '钯金 (USD/oz)',  en: 'Palladium (USD/oz)' },  unit: 'USD/oz',  kind: 'futures',
+    aliases: { zh: ['钯金','palladium','xpd'], en: ['palladium','xpd'] } },
+  { sina: 'hf_CU',     tencent: 'hf_CU',     id: 'HG=F',     name: { zh: '铜 (USD/lb)',    en: 'Copper (USD/lb)' },     unit: 'USD/lb',  kind: 'futures',
+    aliases: { zh: ['铜','copper','hg'], en: ['copper','hg'] } },
+  { sina: 'hf_OIL',    tencent: 'hf_OIL',    id: 'CL=F',     name: { zh: '原油 (USD/bbl)',  en: 'Crude oil (USD/bbl)' },  unit: 'USD/bbl', kind: 'futures',
+    aliases: { zh: ['原油','石油','oil','wti','crude'], en: ['crude','wti','oil'] } },
+
+  // --- China A-share indices ---
+  { sina: 'sh000001',  tencent: 'sh000001',  id: '000001.SS',name: { zh: '上证指数',         en: 'Shanghai Composite' },   unit: 'CNY',     kind: 'cn_index', hero: true,
+    aliases: { zh: ['上证','沪指','shanghai composite','000001'], en: ['shanghai composite','sse'] } },
+  { sina: 'sz399001',  tencent: 'sz399001',  id: '399001.SZ',name: { zh: '深证成指',         en: 'Shenzhen Component' },  unit: 'CNY',     kind: 'cn_index', hero: true,
+    aliases: { zh: ['深证','深成指','szse component','399001'], en: ['shenzhen component','szse'] } },
+  { sina: 'sz399006',  tencent: 'sz399006',  id: '399006.SZ',name: { zh: '创业板指',         en: 'ChiNext' },             unit: 'CNY',     kind: 'cn_index',
+    aliases: { zh: ['创业板','chinext','399006'], en: ['chinext'] } },
+  { sina: 'sh000300',  tencent: 'sh000300',  id: '000300.SS',name: { zh: '沪深300',          en: 'CSI 300' },              unit: 'CNY',     kind: 'cn_index',
+    aliases: { zh: ['沪深300','csi300','000300'], en: ['csi 300','csi300'] } },
+  { sina: 'sh000016',  tencent: 'sh000016',  id: '000016.SS',name: { zh: '上证50',            en: 'SSE 50' },               unit: 'CNY',     kind: 'cn_index',
+    aliases: { zh: ['上证50','sse50','000016'], en: ['sse 50','sse50'] } },
+
+  // --- HK indices ---
+  { sina: 'hkHSI',     tencent: 'hkHSI',     id: '^HSI',     name: { zh: '恒生指数',         en: 'Hang Seng' },           unit: 'HKD',     kind: 'hk_index', hero: true,
+    aliases: { zh: ['恒指','恒生','hang seng','hsi'], en: ['hang seng','hsi'] } },
+  { sina: 'hkHSCEI',   tencent: 'hkHSCEI',   id: '^HSCE',    name: { zh: '恒生中国企业指数', 'en': 'Hang Seng China Enterprises' }, unit: 'HKD', kind: 'hk_index',
+    aliases: { zh: ['国企指数','hsce','h-share'], en: ['hsce','h-share'] } },
+
+  // --- US indices ---
+  { sina: 'int_nasdaq',tencent: 'usIXIC',    id: '^IXIC',    name: { zh: '纳斯达克',         en: 'NASDAQ' },              unit: 'USD',     kind: 'tencent_index', hero: true,
+    aliases: { zh: ['纳斯达克','nasdaq','ixic'], en: ['nasdaq','ixic'] } },
+  { sina: 'int_dji',   tencent: 'usDJI',     id: '^DJI',     name: { zh: '道琼斯',           en: 'Dow Jones' },           unit: 'USD',     kind: 'tencent_index', hero: true,
+    aliases: { zh: ['道琼斯','道指','dow','dji'], en: ['dow jones','dow','dji'] } },
+  { sina: 'int_sp500', tencent: 'usINX',     id: '^GSPC',    name: { zh: '标普500',         en: 'S&P 500' },             unit: 'USD',     kind: 'tencent_index', hero: true,
+    aliases: { zh: ['标普500','标普','s&p 500','s&p','gspc'], en: ['s&p 500','s&p','gspc'] } },
+
+  // --- Crypto ---
+  { sina: '',         tencent: '',           id: 'BTC-USD',  name: { zh: '比特币 (USD)',     en: 'Bitcoin (USD)' },       unit: 'USD',     kind: 'crypto',
+    aliases: { zh: ['比特币','btc','bitcoin'], en: ['bitcoin','btc'] } },
 ];
+
+// ---------------------------------------------------------------------
+// Ticker search — match by code, company name, or alias. Returns the
+// best-matching symbol in the FINANCE_SYMBOLS universe, or null.
+// ---------------------------------------------------------------------
+function findSymbol(query) {
+  if (!query) return null;
+  const q = String(query).trim().toLowerCase();
+  if (!q) return null;
+  // 1) exact id match (AAPL, 000001.SS, ^GSPC, BTC-USD, etc.)
+  let m = FINANCE_SYMBOLS.find(s => (s.id || '').toLowerCase() === q);
+  if (m) return m;
+  // 2) exact sina / tencent code match
+  m = FINANCE_SYMBOLS.find(s => (s.sina || '').toLowerCase() === q || (s.tencent || '').toLowerCase() === q);
+  if (m) return m;
+  // 3) alias match in current language
+  m = FINANCE_SYMBOLS.find(s => {
+    const lang = state && state.lang === 'zh' ? 'zh' : 'en';
+    const arr = (s.aliases && s.aliases[lang]) || [];
+    return arr.some(a => a.toLowerCase() === q);
+  });
+  if (m) return m;
+  // 4) substring match
+  m = FINANCE_SYMBOLS.find(s => {
+    const lang = state && state.lang === 'zh' ? 'zh' : 'en';
+    const arr = (s.aliases && s.aliases[lang]) || [];
+    return arr.some(a => a.toLowerCase().includes(q))
+        || (s.name && s.name.zh && s.name.zh.includes(q))
+        || (s.name && s.name.en && s.name.en.toLowerCase().includes(q))
+        || (s.id && s.id.toLowerCase().includes(q));
+  });
+  return m || null;
+}
+
+// Fetch a single arbitrary ticker. If the ticker is in the hardcoded
+// universe, we use the fast Sina/Tencent/Yahoo path. Otherwise we try
+// Yahoo Finance's v8 chart API with the raw ticker (works for any stock
+// listed on a Yahoo-supported exchange). Returns the same shape as
+// fetchQuote, with an extra _universe='known'|'external' flag.
+async function fetchStock(ticker) {
+  if (!ticker) return null;
+  const t = String(ticker).trim();
+  if (!t) return null;
+  const known = findSymbol(t);
+  if (known) {
+    const r = await fetchQuote(known);
+    return { ...r, _universe: 'known' };
+  }
+  // External ticker — best-effort: try Yahoo v8 directly. Works for
+  // AAPL, TSLA, 0700.HK, 600519.SS, 2330.TW, 7203.T, etc.
+  const adhoc = { id: t, sina: '', tencent: '', kind: 'us_index' };
+  try {
+    const res = await fetchWithTimeout(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}?interval=1d&range=5d`, { headers: { 'User-Agent': _UA } }, 7000);
+    if (!res.ok) return { ...adhoc, price: null, change: null, pct: null, name: { zh: t, en: t } };
+    const d = await res.json();
+    const r = d.chart && d.chart.result;
+    if (r && r[0]) {
+      const m = r[0].meta || {};
+      const p = m.regularMarketPrice;
+      const prev = m.chartPreviousClose;
+      if (p != null && prev != null) {
+        return {
+          id: t, name: { zh: t, en: t }, unit: m.currency || 'USD', kind: 'us_index',
+          price: p, change: p - prev, pct: ((p - prev) / prev) * 100,
+          time: m.regularMarketTime || Date.now(), currency: m.currency,
+          _source: 'yahoo', _universe: 'external'
+        };
+      }
+    }
+    return { ...adhoc, price: null, change: null, pct: null, name: { zh: t, en: t } };
+  } catch (_) {
+    return { ...adhoc, price: null, change: null, pct: null, name: { zh: t, en: t } };
+  }
+}
+
+// Simple sparkline drawing on a <canvas> from a numeric series. Inspired
+// by the old stock app's drawSparkline, but uses the device pixel ratio
+// for sharp lines on retina displays.
+function drawSparkline(canvas, series, color, w, h, fill) {
+  if (!canvas || !series || series.length < 2) return;
+  if (!w) w = canvas.clientWidth || 120;
+  if (!h) h = canvas.clientHeight || 36;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const min = Math.min.apply(null, series);
+  const max = Math.max.apply(null, series);
+  const range = max - min || 1;
+  const stepX = w / (series.length - 1);
+  ctx.beginPath();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = color || '#0D9488';
+  for (let i = 0; i < series.length; i++) {
+    const x = i * stepX;
+    const y = h - ((series[i] - min) / range) * (h - 4) - 2;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  if (fill) {
+    ctx.lineTo(w, h);
+    ctx.lineTo(0, h);
+    ctx.closePath();
+    ctx.fillStyle = (color || '#0D9488') + '22'; // ~13% alpha
+    ctx.fill();
+  }
+  // Dot on the latest point
+  const lastX = (series.length - 1) * stepX;
+  const lastY = h - ((series[series.length-1] - min) / range) * (h - 4) - 2;
+  ctx.beginPath();
+  ctx.arc(lastX, lastY, 2.5, 0, Math.PI * 2);
+  ctx.fillStyle = color || '#0D9488';
+  ctx.fill();
+}
 
 // Parse a Sina record (returns { price, change, pct } or null).
 function parseSina(sym, raw) {
@@ -694,6 +844,8 @@ async function analyzeScamLLM(input, lang = 'zh') {
 // ---------- EXPORT ----------
 window.LiveData = {
   fetchQuotes,
+  fetchStock,
+  findSymbol,
   fetchDailyDigest,
   fetchPOIs,
   fetchStaticMapUrl,
@@ -701,6 +853,7 @@ window.LiveData = {
   fetchWeather,
   imageFor,
   wikiImageFor,
+  drawSparkline,
   llmChat,
   analyzeScamLLM,
   llmGetConfig,

@@ -6,8 +6,9 @@
 //
 // Flow:
 //   1. Read user JWT from Authorization header.
-//   2. Estimate input token cost; call ai_credits_consume(amount=1)
-//      to atomically decrement credits (refused if exhausted).
+//   2. Pre-charge estimated token cost; settle to the real cost after the
+//      API reports usage. Credits are NOT 1-per-chat — they scale with token
+//      usage via a formula (see TOKENS_PER_CREDIT below).
 //   3. Build the system prompt from the user's ai_agents row (soul.md)
 //      + top agent_memories + (for guardian users) paired elder activity.
 //   4. Call SiliconFlow; parse reply + tool calls; execute server-side
@@ -33,6 +34,12 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const SILICONFLOW_KEY = Deno.env.get('SILICONFLOW_KEY') ?? '';
 const SILICONFLOW_URL = Deno.env.get('SILICONFLOW_URL') ?? 'https://api.siliconflow.cn/v1/chat/completions';
 const SILICONFLOW_MODEL = Deno.env.get('SILICONFLOW_MODEL') ?? 'Qwen/Qwen3-8B';
+
+// Credits are charged by token usage, not per message. One credit covers
+// TOKENS_PER_CREDIT tokens (input + output combined). Tune this to change
+// how fast credits drain; the daily cap (ai_credits table, default 50) is
+// unaffected by this divisor.
+const TOKENS_PER_CREDIT = 1000;
 
 const cors = {
   'access-control-allow-origin': '*',
@@ -180,7 +187,9 @@ serve(async (req) => {
   // single message will be 1 credit, but reserve the right to charge more for
   // huge contexts).
   const estIn = estimateTokens(messages);
-  const estCredits = Math.max(1, Math.ceil(estIn / 1000));
+  // Pre-charge an estimate based on input tokens alone; the final cost is
+  // settled against real (input + output) usage below.
+  const estCredits = Math.max(1, Math.ceil(estIn / TOKENS_PER_CREDIT));
 
   // 2. Consume credits via the security-definer RPC. Service-role can
   //    pass any user_id; the function enforces ownership checks for
@@ -373,8 +382,10 @@ try {
   const outTokens = Number(usage.completion_tokens) || Math.ceil(reply.length / 2);
   const inTokens = Number(usage.prompt_tokens) || estIn;
 
-  // 5. Settle credits. Real cost = (in_tokens + out_tokens) / 1000, rounded up.
-  const realCredits = Math.max(1, Math.ceil((inTokens + outTokens) / 1000));
+  // 5. Settle credits. The cost is token-based (not per-message):
+  //    credits = ceil((input_tokens + output_tokens) / TOKENS_PER_CREDIT),
+  //    with a 1-credit floor so even a tiny reply costs something.
+  const realCredits = Math.max(1, Math.ceil((inTokens + outTokens) / TOKENS_PER_CREDIT));
   const diff = realCredits - estCredits;
   if (diff !== 0) {
     // diff > 0 → charge more; diff < 0 → refund

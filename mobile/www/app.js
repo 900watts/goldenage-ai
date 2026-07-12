@@ -2311,6 +2311,25 @@ function renderMap(root) {
     const pin = document.getElementById('mapPin');
     const img = document.getElementById('mapImg');
     const openAmap = document.getElementById('mapOpenAmap');
+    // The location currently shown on the map. Defaults to the user's own
+    // location, and updates to a POI when one is tapped, so the "Open in
+    // AMap" button always deep-links to what the user is looking at.
+    let currentCenter = null;
+    const openAmapUrl = (c) =>
+      `https://uri.amap.com/marker?position=${c.lng},${c.lat}` +
+      `&name=${encodeURIComponent(c.name)}&src=GoldenAge&coordinate=gaode&callnative=0`;
+    function bindAmap() {
+      if (!openAmap) return;
+      if (!currentCenter) { openAmap.style.display = 'none'; return; }
+      openAmap.style.display = 'inline-block';
+      openAmap.onclick = () => {
+        const u = openAmapUrl(currentCenter);
+        const win = window.open(u, '_blank');
+        // Some browsers block window.open() from async handlers; fall back
+        // to navigating in the same tab so the button never silently fails.
+        if (!win) window.location.href = u;
+      };
+    }
     if (!list) return;
     if (status) status.textContent = isZh ? '正在获取位置…' : 'Locating…';
     const r = await window.LiveData.fetchPOIs(renderMap._filter || 'hospital');
@@ -2337,12 +2356,11 @@ function renderMap(root) {
         if (img.parentElement) img.parentElement.style.background = 'linear-gradient(135deg,#1a3d5c 0%,#2d5a87 50%,#1a3d5c 100%)';
       }
     }
-    if (openAmap && lat != null && lng != null) {
-      openAmap.style.display = 'inline-block';
-      openAmap.onclick = () => {
-        const u = `https://uri.amap.com/marker?position=${lng},${lat}&name=${encodeURIComponent(isZh ? '我的位置' : 'My location')}&src=GoldenAge&callnative=1`;
-        window.open(u, '_blank');
-      };
+    if (lat != null && lng != null) {
+      currentCenter = { lat, lng, name: isZh ? '我的位置' : 'My location' };
+      bindAmap();
+    } else {
+      bindAmap();
     }
     if (!items.length) {
       list.innerHTML = '<div class="card" style="text-align:center;color:var(--muted-app);padding:30px">'+ (isZh?'附近没有找到相关地点。试试其他类型或调整位置。':'No results nearby. Try a different category or location.') +'</div>';
@@ -2367,7 +2385,11 @@ function renderMap(root) {
       if (!isFinite(plat) || !isFinite(plng)) return;
       const url2 = window.LiveData.fetchStaticMapUrl(plat, plng, items, '600x400', 15);
       if (url2 && img) { img.src = url2; img.style.display = 'block'; }
-      if (status) status.textContent = (isZh ? '已选中 ' : 'Selected: ') + (c.querySelector('.card-title')?.textContent || '');
+      const title = c.querySelector('.card-title')?.textContent || (isZh ? '地点' : 'Place');
+      if (status) status.textContent = (isZh ? '已选中 ' : 'Selected: ') + title;
+      // Retarget the AMap button to this POI.
+      currentCenter = { lat: plat, lng: plng, name: title };
+      bindAmap();
     });
   })();
 }
@@ -3698,7 +3720,7 @@ async function renderMe(root) {
         </div>
         <button class="big-btn ghost" id="aiCreditsRefresh" style="width:auto;min-width:0;padding:8px 14px;font-size:.85rem">${state.lang==='zh'?'刷新':'Refresh'}</button>
       </div>
-      <p class="text-soft" style="font-size:.78rem;margin-top:10px;line-height:1.5">${state.lang==='zh'?'每条 AI 消息按输出 token 消耗信用（1 信用 ≈ 200 token）。每日 00:00 自动补满。':'Each AI message consumes credits based on output tokens (1 credit ≈ 200 tokens). Refills daily at 00:00 local time.'}</p>
+      <p class="text-soft" style="font-size:.78rem;margin-top:10px;line-height:1.5">${state.lang==='zh'?'信用按 token 消耗：1 信用 = 1000 token（输入+输出合计），不是每条消息 1 信用。每日 00:00 自动补满。':'Credits are charged by token usage: 1 credit = 1000 tokens (input + output combined), not 1 credit per message. Refills daily at 00:00 local time.'}</p>
     </div>
 
     <h3 style="font-size:1.1rem;margin:0 0 8px">${t('meLang')}</h3>

@@ -899,12 +899,53 @@ function aiMatchTool(text) {
   return null;
 }
 
+// Detect a guardian asking about the elder's recent status. Requires BOTH an
+// elder-reference term AND a recency/status question, and is only consulted
+// for guardian (protector) accounts — so it never hijacks normal chat or the
+// navigation tool router.
+function guardianAskIntent(text) {
+  if (!text || text.length < 4) return false;
+  const elderRef = /(老(人|爷|奶|头|伴|年)|长辈|爷爷|奶奶|外公|外婆|父亲|母亲|爸爸|妈妈|爸比|妈咪|祖母|祖父|公公|婆婆|我(的)?(爸|妈|爷|奶|长辈|家人|老头)|elder|old\s*guy|old\s*man|grandp|dad|mom|mum|father|mother|parent|senior)/i.test(text);
+  const askStatus = /(最近|近期|这些天|这几天|今天|这几天怎么|如何|好吗|怎么样|情况|状态|近况|过得|doing|recent|lately|these days|how (is|are|'s|has|have)|how.*been|what.*up|status|doing recently)/i.test(text);
+  return elderRef && askStatus;
+}
+
 async function aiChat(userText) {
   // 1) First, run a scam check on the message itself (verdict from the LLM).
   const scam = await aiScamCheck(userText);
   if (scam) {
     if (scam.action) scam.action();
     return { reply: scam.reply, tool: scam.tool };
+  }
+
+  // 1b) Guardian asking about the elder's recent status → summarize the
+  //     elder's chat history (stored in Supabase) via the LLM.
+  if ((state._agent?.role === 'protector' || state.profile?.role === 'guardian') && guardianAskIntent(userText)) {
+    if (window.LiveData && window.LiveData.llmChat) {
+      const r = await window.LiveData.llmChat(
+        [
+          { role: 'system', content: "Guardian requests the elder's recent-activity summary." },
+          { role: 'user', content: userText }
+        ],
+        { action: 'guardian_summary', temperature: 0.4, max_tokens: 600, lang: state.lang }
+      );
+      if (r && r.text) {
+        const remEl = document.getElementById('aiCreditsRemaining');
+        if (remEl && r.credits_remaining != null) remEl.textContent = r.credits_remaining;
+        return { reply: r.text.trim(), tool: '👨‍👩‍👧 近况总结' };
+      }
+      if (r && r.error) {
+        if (r.error === 'insufficient_credits') {
+          return { reply: state.lang === 'zh'
+            ? `今日 AI 信用已用完（剩余 ${r.credits_remaining} / ${r.credits_total}）。明天 00:00 自动补满。`
+            : `Out of daily AI credits (${r.credits_remaining} / ${r.credits_total}). Refills at 00:00 local time.`, tool: '⏳' };
+        }
+        if (r.error === 'summary_failed') {
+          return { reply: state.lang === 'zh' ? 'AI 总结失败了，请稍后再试。' : 'The summary failed. Please try again later.', tool: '⚠️' };
+        }
+        return { reply: (state.lang === 'zh' ? '（总结出错）：' : 'Summary error: ') + r.error, tool: '⚠️' };
+      }
+    }
   }
 
   // 2) Tool routing for explicit requests ("open the map", "gold today", ...).

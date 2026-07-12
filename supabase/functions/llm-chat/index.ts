@@ -251,6 +251,81 @@ serve(async (req) => {
     });
   }
 
+  // 2d. Guardian "how's the elder been?" summary.
+  //     A guardian asks about their paired elder; we pull the elder's recent
+  //     chat history (plus activity) from Supabase and have the LLM summarize
+  //     it into a warm, concise status update for the family.
+  if (body?.action === 'guardian_summary') {
+    if (agentRole !== 'protector') {
+      return jsonResponse({ reply: lang === 'zh'
+        ? '只有守护者账号可以查看长者的近况总结。'
+        : "Only a guardian account can request the elder's status summary." });
+    }
+    // Resolve the paired elder from this guardian's profile.
+    const gProfile = await admin.from('profiles')
+      .select('elder_account_id')
+      .eq('id', userId)
+      .maybeSingle();
+    const elderRaw = gProfile.data?.elder_account_id || null;
+    const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const elderId = (elderRaw && uuidRe.test(elderRaw)) ? elderRaw : null;
+    if (!elderId) {
+      return jsonResponse({ reply: lang === 'zh'
+        ? '您还没有关联长者账号。请先在「守护者」页面绑定长者的配对码。'
+        : "You haven't linked an elder account yet. Pair with the elder's code in the Guardian tab first." });
+    }
+    const since = new Date(Date.now() - 7 * 86400_000).toISOString();
+    const [chatRes, scamRes, remRes, elderMemRes, elderAgentRes, sosRes] = await Promise.all([
+      admin.from('chat_history').select('role, content, created_at')
+        .eq('user_id', elderId).gte('created_at', since)
+        .order('created_at', { ascending: false }).limit(60),
+      admin.from('scam_reports').select('created_at, verdict, advice')
+        .eq('user_id', elderId).gte('created_at', since).order('created_at', { ascending: false }).limit(10),
+      admin.from('reminders').select('label, kind, next_fire_at, status')
+        .eq('user_id', elderId).in('status', ['scheduled', 'fired']).order('next_fire_at', { ascending: true }).limit(20),
+      admin.from('agent_memories').select('category, content, importance, created_at')
+        .eq('subject_user_id', elderId).neq('category', '_meta').order('importance', { ascending: false }).order('created_at', { ascending: false }).limit(10),
+      admin.from('ai_agents').select('name, role').eq('user_id', elderId).maybeSingle(),
+      admin.from('sos_events').select('created_at, kind, resolved, note')
+        .eq('user_id', elderId).gte('created_at', since).order('created_at', { ascending: false }).limit(10).catch(() => ({ data: [] })),
+    ]);
+
+    const elderName = (elderAgentRes.data?.name) || (lang === 'zh' ? '长者' : 'the elder');
+    const chats = (chatRes.data || []).reverse(); // chronological
+    const transcript = chats.length
+      ? chats.map((c: any) => `${c.role === 'user' ? (lang === 'zh' ? '长者' : 'Elder') : (lang === 'zh' ? 'AI' : 'AI')}: ${String(c.content || '').substring(0, 300)}`).join('\n')
+      : (lang === 'zh' ? '（最近 7 天没有对话记录）' : '(no chat history in the last 7 days)');
+
+    const activity =
+      '\n### 防诈骗检测\n' + ((scamRes.data || []).length ? (scamRes.data as any[]).map((r: any) => `- ${r.created_at} → ${r.verdict}`).join('\n') : (lang === 'zh' ? '（无）' : 'none')) +
+      '\n### 用药与提醒\n' + ((remRes.data || []).length ? (remRes.data as any[]).map((r: any) => `- ${r.label} (${r.status})`).join('\n') : (lang === 'zh' ? '（无）' : 'none')) +
+      '\n### SOS 求助\n' + ((sosRes.data || []).length ? (sosRes.data as any[]).map((r: any) => `- ${r.created_at} ${r.kind} ${r.resolved ? (lang === 'zh' ? '已处理' : 'resolved') : (lang === 'zh' ? '待处理' : 'open')}`).join('\n') : (lang === 'zh' ? '（无）' : 'none')) +
+      '\n### 长者记忆\n' + ((elderMemRes.data || []).length ? (elderMemRes.data as any[]).map((m: any) => `- [${m.category}] ${m.content}`).join('\n') : (lang === 'zh' ? '（无）' : 'none'));
+
+    const summarySys = lang === 'zh'
+      ? '你是长者陪伴 AI 的「近况总结员」。下面是一位长者最近 7 天与 AI 的对话记录，以及他的一些活动数据。请用温暖、简洁的中文，为他的家人写一段「近况总结」：\n- 他最近聊了什么话题、情绪如何、有没有提到健康/家人/孤独等；\n- 有没有异常或需要家人关注的事（诈骗、用药、SOS）；\n- 给家人一句温暖的、可执行的建议。\n不要编造对话里没有的信息。控制在 250 字以内。'
+      : 'You are the "recent-activity summarizer" for an elderly companion AI. Below is the elder\'s chat history with the AI over the last 7 days, plus some activity data. Write a warm, concise summary for their family:\n- What topics they discussed, their mood, any mentions of health/family/loneliness;\n- Any anomalies or things the family should watch (scams, medication, SOS);\n- One warm, actionable suggestion.\nDo not invent anything not in the transcript. Keep under 250 words.';
+
+    const summaryUser = lang === 'zh'
+      ? `长者端 AI 名字：${elderName}\n\n=== 最近 7 天对话记录 ===\n${transcript}\n\n=== 其他活动 ===${activity}\n\n请输出近况总结：`
+      : `Elder's AI name: ${elderName}\n\n=== Chat history (last 7 days) ===\n${transcript}\n\n=== Other activity ===${activity}\n\nPlease write the summary:`;
+
+    try {
+      const summary = await callLLM(summarySys, summaryUser, { temperature: 0.4, max_tokens: 600 });
+      return jsonResponse({
+        reply: summary,
+        guardian_summary: true,
+        elder_name: elderName,
+        chat_count: chats.length,
+        credits_remaining: cred.credits_remaining,
+        credits_total: cred.credits_total,
+        reset_at: cred.reset_at
+      });
+    } catch (e) {
+      return jsonResponse({ error: 'summary_failed', detail: e?.message || String(e) }, 502);
+    }
+  }
+
 // 3. Build the system prompt: load the top agent_memories + (for guardian
 //    users) recent activity of the paired elder. Then call SiliconFlow.
 let completion;
@@ -372,6 +447,23 @@ try {
       return jsonResponse({ error: 'upstream_error', status: r.status, detail: detail.substring(0, 500) }, 502);
     }
     completion = await r.json();
+
+    // Persist this conversation turn into chat_history so a paired guardian
+    // can later ask "how's the elder been?" and we can summarize it. The
+    // chatting user's id is `userId`; for a companion this is the elder.
+    // Non-fatal: a failed insert must never break the reply.
+    try {
+      const _reply: string = (completion?.choices?.[0]?.message?.content) ?? '';
+      const lastUserTurn = [...messages].reverse().find((m: any) => m.role === 'user');
+      const rows: any[] = [];
+      if (lastUserTurn && typeof lastUserTurn.content === 'string' && lastUserTurn.content.trim()) {
+        rows.push({ user_id: userId, session_id: body?.session_id ?? null, role: 'user', content: lastUserTurn.content.substring(0, 4000) });
+      }
+      if (_reply) rows.push({ user_id: userId, session_id: body?.session_id ?? null, role: 'assistant', content: _reply.substring(0, 4000) });
+      if (rows.length) await admin.from('chat_history').insert(rows);
+    } catch (histErr) {
+      console.warn('chat_history insert failed (non-fatal):', histErr?.message || histErr);
+    }
   } catch (e) {
     // Refund.
     await admin.rpc('ai_credits_consume', {

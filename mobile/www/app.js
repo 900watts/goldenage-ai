@@ -295,46 +295,57 @@ function initSupabase() {
     // (Sign in / Sign up) instead of jumping straight to the home page
     // when the user already has a session in localStorage.
     const forceLogin = new URLSearchParams(window.location.search).get('login') === '1';
-    // Check existing session
+
+    // Listen for auth changes (magic-link click in email fires SIGNED_IN here).
+    // We attach this AFTER the initial getSession() resolves, otherwise
+    // Supabase's "session restored from localStorage" event would auto-
+    // sign the user in even when we asked for the login screen.
+    let lastSessionId = null;
+    const attachAuthListener = () => {
+      sb.auth.onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_IN' && session) {
+          // Supabase's JS client fires SIGNED_IN on every token refresh
+          // (default every ~50s). That's not a fresh login — it's the
+          // auto-refresh coming back with a new access token for the
+          // same logged-in user. Skip the welcome toast + state churn
+          // unless the user is actually transitioning from signed-out
+          // -> signed-in OR the session ID changed.
+          const isFresh = !state.signedIn || (lastSessionId && lastSessionId !== session.access_token);
+          lastSessionId = session.access_token;
+          sbUser = session.user;
+          finishSignIn(session.user, state.lang === 'zh', isFresh);
+        } else if (event === 'SIGNED_OUT') {
+          sbUser = null;
+          state.signedIn = false;
+          localStorage.removeItem('signedIn');
+          applyState();
+        }
+      });
+    };
+
+    // Check existing session first.
     sb.auth.getSession().then(({ data }) => {
       if (data.session && !forceLogin) {
+        // Normal path: session present, user goes to the home page.
         sbUser = data.session.user;
         state.signedIn = true;
         applyState();
         loadUserPreferences(sbUser.id);
+        attachAuthListener();
       } else if (data.session && forceLogin) {
         // Session exists but the user asked for the login screen — show
         // it without signing out (so they can switch account, sign up
         // a new one, or just continue with the same one).
         sbUser = data.session.user;
-        state.signedIn = false; // <-- forces renderAuth
         renderAuth._signedInEmail = sbUser.email;
+        state.signedIn = false; // <-- forces renderAuth
         applyState();
+        attachAuthListener();
       } else {
         // No session — normal flow.
         state.signedIn = false;
         applyState();
-      }
-    });
-    // Listen for auth changes (magic-link click in email fires SIGNED_IN here)
-    let lastSessionId = null;
-    sb.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' && session) {
-        // Supabase's JS client fires SIGNED_IN on every token refresh (default
-        // every ~50s). That's not a fresh login — it's the auto-refresh
-        // coming back with a new access token for the same logged-in user.
-        // Skip the welcome toast + state churn unless the user is actually
-        // transitioning from signed-out -> signed-in OR the session ID changed
-        // (a real new sign-in).
-        const isFresh = !state.signedIn || (lastSessionId && lastSessionId !== session.access_token);
-        lastSessionId = session.access_token;
-        sbUser = session.user;
-        finishSignIn(session.user, state.lang === 'zh', isFresh);
-      } else if (event === 'SIGNED_OUT') {
-        sbUser = null;
-        state.signedIn = false;
-        localStorage.removeItem('signedIn');
-        applyState();
+        attachAuthListener();
       }
     });
   } catch(e) { console.warn('Supabase init failed:', e); }

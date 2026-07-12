@@ -837,6 +837,8 @@ async function llmChat(messages, opts = {}) {
         temperature: opts.temperature || 0.6,
         max_tokens:   opts.max_tokens   || 600,
         tz_offset_minutes: getTzOffsetMinutes(),
+        lang: opts.lang || 'zh',
+        action: opts.action,
         tools: opts.tools,
         tool_choice: opts.tool_choice
       })

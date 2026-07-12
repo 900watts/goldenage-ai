@@ -46,6 +46,10 @@ Thumbs.db
 *.log
 logs/
 
+# --- Research clones (not project code) -----------------------------
+hermes-agent/
+openclaw/
+
 # --- WorkBuddy project internals ------------------------------------
 .workbuddy/memory/*.md
 !/.workbuddy/memory/.gitkeep

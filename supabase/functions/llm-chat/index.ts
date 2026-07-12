@@ -8,10 +8,21 @@
 //   1. Read user JWT from Authorization header.
 //   2. Estimate input token cost; call ai_credits_consume(amount=1)
 //      to atomically decrement credits (refused if exhausted).
-//   3. Call SiliconFlow chat completions with the user's messages.
-//   4. On success: parse the response, settle the credit cost based
-//      on the actual output tokens (refund or extra-charge).
-//   5. Return { reply, usage, credits_remaining, credits_total, reset_at }.
+//   3. Build the system prompt from the user's ai_agents row (soul.md)
+//      + top agent_memories + (for guardian users) paired elder activity.
+//   4. Call SiliconFlow; parse reply + tool calls; execute server-side
+//      tool calls (set/cancel reminder, save/forget memory).
+//   5. Self-configuration (inspired by OpenClaw "Dreaming"):
+//        - autoCapture(): after each reply, extract durable facts from the
+//          exchange and store/merge them into agent_memories (dedup +
+//          spaced-repetition importance bump).
+//        - maybeAutoRefine(): when enough memories accumulate, reflect on
+//          them (REM phase) and rewrite the agent's soul.md to be
+//          personalized to the user — gated so a single chat can't rewrite
+//          the persona.
+//      A manual `action: "refine_agent"` request triggers soul refinement
+//      on demand from the Me screen.
+//   6. Settle credits; return reply + meta.
 // =====================================================================
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
@@ -54,6 +65,42 @@ function jsonResponse(body, status = 200) {
   });
 }
 
+// Pull a JSON object out of an LLM response that may be fenced or wrapped
+// in prose. Returns the parsed object (or {} on failure).
+function extractJson(s) {
+  if (s == null) return {};
+  if (typeof s !== 'string') return s;
+  const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) {
+    try { return JSON.parse(fence[1].trim()); } catch { /* fall through */ }
+  }
+  const start = s.indexOf('{');
+  const end = s.lastIndexOf('}');
+  if (start >= 0 && end > start) {
+    try { return JSON.parse(s.slice(start, end + 1)); } catch { return {}; }
+  }
+  return {};
+}
+
+// Small wrapper around SiliconFlow for our own internal calls (memory
+// extraction, soul refinement) — keeps the main code readable.
+async function callLLM(system, user, opts = {}) {
+  const r = await fetch(SILICONFLOW_URL, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${SILICONFLOW_KEY}`, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: SILICONFLOW_MODEL,
+      messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+      temperature: opts.temperature ?? 0.3,
+      max_tokens: opts.max_tokens ?? 500,
+      stream: false
+    })
+  });
+  if (!r.ok) throw new Error('upstream ' + r.status);
+  const j = await r.json();
+  return j?.choices?.[0]?.message?.content ?? '';
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return jsonResponse({ error: 'method_not_allowed' }, 405);
@@ -86,11 +133,22 @@ serve(async (req) => {
   // Read body.
   let body;
   try { body = await req.json(); } catch { return jsonResponse({ error: 'bad_body' }, 400); }
-  const messages = Array.isArray(body?.messages) ? body.messages : null;
-  if (!messages || messages.length === 0) return jsonResponse({ error: 'no_messages' }, 400);
+  let messages = Array.isArray(body?.messages) ? body.messages : null;
+  if (!messages || messages.length === 0) {
+    // The manual "refine_agent" action triggers soul-refinement on demand
+    // and does not need user messages; give it a placeholder so token
+    // estimation / credit charging below still works.
+    if (body?.action === 'refine_agent') {
+      messages = [{ role: 'system', content: '(auto refine)' }];
+    } else {
+      return jsonResponse({ error: 'no_messages' }, 400);
+    }
+  }
 
   // Determine the user's timezone offset (minutes from UTC). Default +08:00.
   const tzOffsetMinutes = Number.isFinite(body?.tz_offset_minutes) ? Math.trunc(body.tz_offset_minutes) : 480;
+  // Language for auto-config prompts (zh default).
+  const lang = (body?.lang === 'en') ? 'en' : 'zh';
 
   // Estimate tokens. Charge 1 credit upfront (small enough that almost any
   // single message will be 1 credit, but reserve the right to charge more for
@@ -119,23 +177,47 @@ serve(async (req) => {
     }, 402);
   }
 
-// 3. Build the system prompt: load the user's ai_agents row + top
-//    agent_memories + (for guardian users) recent activity of the
-//    paired elder. Then call SiliconFlow.
-let completion;
-try {
-  // 3a. Read the agent row.
-  const agentRes = await admin.from('ai_agents')
-    .select('id, name, role, soul_md, registration_code, subject_user_id_default')
+  // 2b. Load the user's agent row once (used by the manual refine action,
+  //     the normal chat, and the auto-config steps below).
+  const agentById = await admin.from('ai_agents')
+    .select('id, name, role, soul_md, registration_code')
     .eq('user_id', userId)
     .maybeSingle();
-  const agent = agentRes.data || null;
+  const agent = agentById.data || null;
   const agentRole: 'companion' | 'protector' = (agent?.role === 'protector') ? 'protector' : 'companion';
 
-  // 3b. Read the user's top memories.
+  // 2c. Manual "refine_agent" action: rewrite the soul.md from memories on
+  //     demand (e.g. the user taps "Let the AI perfect its personality").
+  if (body?.action === 'refine_agent') {
+    if (!agent) return jsonResponse({ error: 'no_agent' }, 400);
+    let refined;
+    try {
+      refined = await refineSoul(admin, agent, userId, lang);
+    } catch (e) {
+      return jsonResponse({ error: 'refine_failed', detail: e.message }, 502);
+    }
+    return jsonResponse({
+      reply: '',
+      soul_refined: true,
+      soul_md: refined.soul_md,
+      summary: refined.summary,
+      agent: agent ? { id: agent.id, name: agent.name, role: agent.role, registration_code: agent.registration_code } : null,
+      credits_remaining: cred.credits_remaining,
+      credits_total:     cred.credits_total,
+      reset_at:          cred.reset_at
+    });
+  }
+
+// 3. Build the system prompt: load the top agent_memories + (for guardian
+//    users) recent activity of the paired elder. Then call SiliconFlow.
+let completion;
+try {
+  // 3b. Read the user's top memories (exclude the internal _meta sentinel
+  //     row we use to track soul-refinement state).
   const memRes = agent ? await admin.from('agent_memories')
     .select('id, subject_user_id, category, content, importance, created_at')
     .eq('agent_id', agent.id)
+    .neq('category', '_meta')
     .order('importance', { ascending: false })
     .order('created_at', { ascending: false })
     .limit(20) : { data: [] };
@@ -165,7 +247,7 @@ try {
           .eq('user_id', elderId).in('status', ['scheduled', 'fired']).order('next_fire_at', { ascending: true }).limit(20),
         // Memories the elder's AI has written ABOUT this elder.
         admin.from('agent_memories').select('category, content, importance, created_at')
-          .eq('subject_user_id', elderId).order('importance', { ascending: false }).order('created_at', { ascending: false }).limit(10),
+          .eq('subject_user_id', elderId).neq('category', '_meta').order('importance', { ascending: false }).order('created_at', { ascending: false }).limit(10),
         // Elder's agent info (so we can refer to them by their AI's name).
         admin.from('ai_agents').select('name, role').eq('user_id', elderId).maybeSingle(),
         // SOS events (if any) in the last 24h.
@@ -283,9 +365,9 @@ try {
     }
   }
 
-  // 6. Execute any tool calls the model emitted. Only `set_reminder` and
-  //    `cancel_reminder` need server-side action; the navigation / SOS
-  //    tools are client-side only.
+  // 6. Execute any tool calls the model emitted. Only `set_reminder`,
+  //    `cancel_reminder`, `save_memory`, `forget_memory` need server-side
+  //    action; the navigation / SOS tools are client-side only.
   const toolResults: any[] = [];
   for (const call of toolCalls) {
     const fn = call.function || {};
@@ -315,6 +397,22 @@ try {
     }
   }
 
+  // 7. Self-configuration (OpenClaw "Dreaming" inspired):
+  //    - Capture durable facts from this exchange.
+  //    - If enough memories have accumulated, reflect and refine the soul.
+  let capture = { added: 0, updated: 0 };
+  let soulRefined = false;
+  try {
+    const lastUser = [...messages].reverse().find((mm: any) => mm.role === 'user');
+    const userText = (lastUser && typeof lastUser.content === 'string') ? lastUser.content : '';
+    if (agent) {
+      capture = await autoCapture(admin, agent, userId, userText, reply, lang);
+      soulRefined = await maybeAutoRefine(admin, agent, userId, lang);
+    }
+  } catch (e) {
+    console.warn('self-config error (non-fatal):', e?.message || e);
+  }
+
   return jsonResponse({
     reply,
     tool_calls: toolCalls,
@@ -324,7 +422,9 @@ try {
     credits_total:     cred.credits_total,
     reset_at:          cred.reset_at,
     agent: agent ? { id: agent.id, name: agent.name, role: agent.role, registration_code: agent.registration_code } : null,
-    memories_used: memories.length
+    memories_used: memories.length,
+    auto_memories: capture,
+    soul_refined: soulRefined
   });
 });
 
@@ -463,6 +563,178 @@ function buildLlmSystemPrompt(agent: any, memories: any[], elderCtx: string): st
     : '（暂无）';
 
   return `你叫"${name}"。${soul}\n\n## 你已记住的事（memory.txt）\n${memBlock}${elderCtx}`;
+}
+
+// =====================================================================
+// Self-configuration: memory extraction + soul refinement
+// =====================================================================
+//
+// Mirror of OpenClaw's "Dreaming" pipeline, adapted to a server-side,
+// per-user companion:
+//   - autoCapture()  = in-conversation capture (the "light" + "REM" capture)
+//   - maybeAutoRefine() = the "deep" promotion gate
+//   - refineSoul()   = the reflection that rewrites soul.md
+//
+// All state lives in the existing ai_agents / agent_memories tables. A
+// single `_meta` memory row (category='_meta') stores soul-refinement
+// bookkeeping so we need no schema migration.
+
+async function autoCapture(admin: any, agent: any, userId: string, userText: string, assistantText: string, lang: string) {
+  if (!userText || userText.trim().length < 4) return { added: 0, updated: 0 };
+  // Load recent memories to give the extractor dedup context.
+  const memRes = await admin.from('agent_memories')
+    .select('id, category, content, importance')
+    .eq('agent_id', agent.id)
+    .neq('category', '_meta')
+    .order('importance', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(15);
+  const existing: any[] = memRes.data || [];
+
+  const isZh = lang !== 'en';
+  const existingBlock = existing.length
+    ? existing.map(m => `- ${m.content}`).join('\n')
+    : (isZh ? '（无）' : '(none)');
+  const sys = isZh
+    ? `你是记忆抽取引擎。从用户与 AI 的最新一轮对话中，抽取值得长期记住的「事实」（用户的偏好、健康、家人、作息习惯、情绪倾向、重要事件）。\n已有记忆（用于去重或更新，不要重复）：\n${existingBlock}\n只输出 JSON：{"new":[{"category":"preference|health|family|habit|event|mood|fact","content":"简洁陈述（中文）","importance":1-10}],"update":[{"match":"已有记忆的原文片段","importance":1-10}]}。\n不要抽取闲聊、寒暄、临时提问。new 最多 5 条。importance 表示长期重要性（健康/家人相关更高）。`
+    : `You are a memory extraction engine. From the latest user<->AI exchange, extract durable facts worth remembering (user preferences, health, family, habits, mood, important events). Existing memories (for dedup/update, do not duplicate):\n${existingBlock}\nOutput ONLY JSON: {"new":[{"category":"preference|health|family|habit|event|mood|fact","content":"concise statement","importance":1-10}],"update":[{"match":"fragment of an existing memory","importance":1-10}]}. Skip small talk/greetings. At most 5 new. importance = long-term value (health/family higher).`;
+  const userContent = isZh
+    ? `用户说：${userText}\nAI 回复：${assistantText}`
+    : `User said: ${userText}\nAI replied: ${assistantText}`;
+
+  let parsed: any;
+  try {
+    const txt = await callLLM(sys, userContent, { temperature: 0.2, max_tokens: 500 });
+    parsed = extractJson(txt);
+  } catch (e) {
+    return { added: 0, updated: 0 };
+  }
+  if (!parsed || (!Array.isArray(parsed.new) && !Array.isArray(parsed.update))) {
+    return { added: 0, updated: 0 };
+  }
+
+  let added = 0, updated = 0;
+  for (const mem of (parsed.new || [])) {
+    const content = String(mem.content || '').trim();
+    if (!content || content.length > 300) continue;
+    const norm = content.toLowerCase();
+    const dup = existing.find(e => e.content.trim().toLowerCase() === norm);
+    const cat = String(mem.category || 'fact').slice(0, 20);
+    const imp = Math.max(1, Math.min(10, parseInt(mem.importance, 10) || 5));
+    if (dup) {
+      // Spaced-repetition signal: a repeated fact gains importance.
+      if (imp > dup.importance) {
+        await admin.from('agent_memories')
+          .update({ importance: imp, updated_at: new Date().toISOString() })
+          .eq('id', dup.id);
+      }
+      updated++;
+    } else {
+      const ins = await admin.from('agent_memories')
+        .insert({ agent_id: agent.id, subject_user_id: userId, category: cat, content, importance: imp, source: 'auto' })
+        .select('id').single();
+      if (!ins.error) {
+        added++;
+        existing.push({ id: ins.data.id, content, importance: imp, category: cat });
+      }
+    }
+  }
+  for (const u of (parsed.update || [])) {
+    const frag = String(u.match || '').trim().toLowerCase();
+    if (!frag) continue;
+    const tgt = existing.find(e => e.content.trim().toLowerCase().includes(frag));
+    if (tgt) {
+      const imp = Math.max(1, Math.min(10, parseInt(u.importance, 10) || tgt.importance));
+      await admin.from('agent_memories')
+        .update({ importance: Math.max(tgt.importance, imp), updated_at: new Date().toISOString() })
+        .eq('id', tgt.id);
+      updated++;
+    }
+  }
+  return { added, updated };
+}
+
+// Read the soul-refinement bookkeeping stored in the _meta sentinel row.
+async function readMeta(admin: any, agent: any) {
+  const res = await admin.from('agent_memories')
+    .select('id, content')
+    .eq('agent_id', agent.id)
+    .eq('category', '_meta')
+    .maybeSingle();
+  if (!res.data) return { id: null, at: null, version: 0 };
+  try {
+    const o = JSON.parse(res.data.content);
+    return { id: res.data.id, at: o.at || null, version: o.version || 0 };
+  } catch {
+    return { id: res.data.id, at: null, version: 0 };
+  }
+}
+
+async function writeMeta(admin: any, agent: any, userId: string, meta: { id: string | null; at: string; version: number }) {
+  if (meta.id) {
+    await admin.from('agent_memories')
+      .update({ content: JSON.stringify({ kind: 'soul_refined', at: meta.at, version: meta.version }), updated_at: new Date().toISOString() })
+      .eq('id', meta.id);
+  } else {
+    await admin.from('agent_memories')
+      .insert({ agent_id: agent.id, subject_user_id: userId, category: '_meta', content: JSON.stringify({ kind: 'soul_refined', at: meta.at, version: meta.version }), importance: 1, source: 'system' });
+  }
+}
+
+// Reflect on accumulated memories and rewrite the agent's soul.md to be
+// personalized to the user. Returns the new soul_md + a one-line summary.
+async function refineSoul(admin: any, agent: any, userId: string, lang: string) {
+  const memRes = await admin.from('agent_memories')
+    .select('category, content, importance')
+    .eq('agent_id', agent.id)
+    .neq('category', '_meta')
+    .order('importance', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(40);
+  const mems: any[] = memRes.data || [];
+  const meta = await readMeta(admin, agent);
+
+  const isZh = lang !== 'en';
+  const roleName = agent.role === 'protector' ? (isZh ? '守护者' : 'guardian') : (isZh ? '陪伴' : 'companion');
+  const memBlock = mems.length ? mems.map(m => `- [${m.category}] ${m.content}`).join('\n') : (isZh ? '（暂无记忆）' : '(no memories)');
+  const sys = isZh
+    ? `你是为「${roleName}」角色 AI 助手做人格(Soul)优化的引擎。\n根据下面已记住的用户事实，把现有的 Soul 重写得更个性化、更贴合这位用户，但保持角色边界与红线不变。\n只输出 JSON：{"soul_md": "新的 Soul 全文（中文、markdown、结构清晰，长度不超过原稿 1.2 倍）", "summary": "一句话说明这次改了什么"}。`
+    : `You refine the Soul (persona) of a "${roleName}" role AI assistant. Using the remembered user facts below, rewrite the existing Soul to be more personalized to this user while keeping role boundaries and red lines. Output ONLY JSON: {"soul_md":"full new Soul (English, markdown, concise, <=1.2x original length)","summary":"one line of what changed"}.`;
+  const userContent = isZh
+    ? `现有 Soul：\n${agent.soul_md || '(空)'}\n\n已记住的事实：\n${memBlock}\n\n请输出新的 Soul（只用 JSON）。`
+    : `Current Soul:\n${agent.soul_md || '(empty)'}\n\nRemembered facts:\n${memBlock}\n\nOutput the new Soul (JSON only).`;
+
+  const txt = await callLLM(sys, userContent, { temperature: 0.4, max_tokens: 800 });
+  const parsed = extractJson(txt);
+  const newSoul = (parsed && typeof parsed.soul_md === 'string' && parsed.soul_md.trim())
+    ? parsed.soul_md.trim()
+    : agent.soul_md;
+  const summary = (parsed && typeof parsed.summary === 'string') ? parsed.summary : '';
+
+  await admin.from('ai_agents')
+    .update({ soul_md: newSoul, updated_at: new Date().toISOString() })
+    .eq('id', agent.id);
+
+  await writeMeta(admin, agent, userId, { id: meta.id, at: new Date().toISOString(), version: (meta.version || 0) + 1 });
+  return { soul_md: newSoul, summary };
+}
+
+// Gate the automatic soul refinement: only rewrite the persona when enough
+// durable memories exist AND at least 7 days have passed since the last
+// rewrite. This prevents a single emotional chat from over-fitting the
+// persona (spaced-repetition style gating, à la OpenClaw).
+async function maybeAutoRefine(admin: any, agent: any, userId: string, lang: string): Promise<boolean> {
+  const memRes = await admin.from('agent_memories')
+    .select('id')
+    .eq('agent_id', agent.id)
+    .neq('category', '_meta');
+  const count = memRes.data ? memRes.data.length : 0;
+  if (count < 6) return false;
+  const meta = await readMeta(admin, agent);
+  const sevenDays = 7 * 86400_000;
+  if (meta.at && (Date.now() - new Date(meta.at).getTime()) < sevenDays) return false;
+  await refineSoul(admin, agent, userId, lang);
+  return true;
 }
 
 // =====================================================================

@@ -923,6 +923,7 @@ async function aiChat(userText) {
       const r = await window.LiveData.llmChat(messages, {
         temperature: 0.65,
         max_tokens: 500,
+        lang: state.lang,
         tools: APP_TOOLS,
         tool_choice: 'auto'
       });
@@ -1773,9 +1774,13 @@ function wizardRoleGate(root, isZh) {
         <div style="font-size:1.2rem;font-weight:700">${t('roleGuardian')}</div>
         <div class="text-soft" style="font-size:.9rem;margin-top:4px">${t('roleGuardianSub')}</div>
       </button>
+      <div style="height:14px"></div>
+      <p class="text-soft" style="font-size:.8rem;line-height:1.5;background:var(--bg);border:1px solid var(--border-app);border-radius:10px;padding:10px 12px">${isZh ? '提示：选「监护人」后无需立即关联家人，可稍后在「我 → 账户」里用对方注册码关联。' : 'Tip: picking "Guardian" does not require pairing now — you can link a family member later in Me → Account using their code.'}</p>
     </div>`;
   document.getElementById('roleElderly').onclick = () => { w.data.role = 'elderly'; renderAuthSetup(root, isZh); };
-  document.getElementById('roleGuardian').onclick = () => { w.data.role = 'guardian'; renderPairInput(root, isZh); };
+  // Guardians are NOT forced to pair at sign-up — pairing is deferred to the
+  // Me screen (renderMe has the elder-pairing UI). This keeps onboarding fast.
+  document.getElementById('roleGuardian').onclick = () => { w.data.role = 'guardian'; renderAuthSetup(root, isZh); };
 }
 
 // Guardian: enter the elder's pairing code / account id to pair now.
@@ -2476,13 +2481,15 @@ function renderAgentCard(agent) {
     : (isZh ? '陪伴 AI' : 'Companion AI');
   const codeLabel = isZh ? '我的注册码' : 'My registration code';
   return `
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
       <div style="width:54px;height:54px;border-radius:14px;background:linear-gradient(135deg,var(--primary),var(--cta));color:#fff;display:flex;align-items:center;justify-content:center">${ICON.ai || '🤖'}</div>
       <div style="flex:1;min-width:0">
         <div style="font-weight:700;font-size:1.1rem">${escapeHtml(agent.name)}</div>
         <div class="text-soft" style="font-size:.85rem">${escapeHtml(roleLabel)} · ${isZh ? '记忆数' : 'Memories'}: <b>${agent.memory_count || 0}</b></div>
       </div>
+      <span style="font-size:.72rem;font-weight:600;padding:4px 10px;border-radius:999px;background:linear-gradient(135deg,rgba(217,119,6,.15),rgba(202,138,4,.15));color:var(--primary);border:1px solid var(--border-app);white-space:nowrap">${isZh ? '✨ 自动养成' : '✨ Auto-config'}</span>
     </div>
+    <p class="text-soft" style="font-size:.78rem;margin:0 0 14px;line-height:1.5">${isZh ? 'AI 会根据我们的对话自动记住关于您的事，并随之调整自己的人格（soul）。您也可以随时手动编辑。' : 'The AI automatically remembers things about you from our chats and tunes its own personality (soul). You can also edit it anytime.'}</p>
     <div style="padding:12px 14px;background:var(--bg);border-radius:12px;border:1px solid var(--border-app);margin-bottom:14px">
       <div style="font-size:.78rem;color:var(--muted);margin-bottom:4px">${codeLabel}</div>
       <div style="display:flex;align-items:center;gap:10px">
@@ -2492,8 +2499,9 @@ function renderAgentCard(agent) {
       <p class="text-soft" style="font-size:.78rem;margin:6px 0 0;line-height:1.5">${isZh ? '把这个 6 位注册码发给你的家人，他们可以在「守护者」端用这个码关联你。' : 'Share this 6-char code with your family so they can pair with you on the Guardian side.'}</p>
     </div>
 
-    <div style="display:flex;gap:8px;margin-bottom:14px">
-      <button class="big-btn ghost" id="editSoulBtn" style="flex:1;padding:10px;font-size:.9rem">${isZh ? '编辑灵魂 (soul.md)' : 'Edit soul.md'}</button>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+      <button class="big-btn primary" id="refineSoulBtn" style="flex:1;min-width:140px;padding:10px;font-size:.9rem;background:linear-gradient(135deg,var(--primary),var(--cta))">${isZh ? '✨ 让 AI 完善人格' : '✨ Perfect personality'}</button>
+      <button class="big-btn ghost" id="editSoulBtn" style="flex:1;min-width:120px;padding:10px;font-size:.9rem">${isZh ? '编辑灵魂' : 'Edit soul'}</button>
       <button class="big-btn ghost" id="reloadAgentBtn" style="width:auto;min-width:0;padding:10px 14px;font-size:.9rem">${isZh ? '刷新' : 'Refresh'}</button>
     </div>
 
@@ -2508,6 +2516,35 @@ function renderAgentCard(agent) {
   `;
 }
 
+// Trigger soul refinement on demand: asks the server to reflect on the
+// accumulated memories and rewrite the agent's soul.md.
+async function refineMyAgent() {
+  if (!state._agent) { toast(state.lang==='zh' ? '请稍候，AI 正在准备…' : 'Please wait, AI is loading…', true); return; }
+  const isZh = state.lang === 'zh';
+  const btn = document.getElementById('refineSoulBtn');
+  if (btn) { btn.disabled = true; btn.textContent = isZh ? '✨ 完善中…' : '✨ Refining…'; }
+  try {
+    const r = await window.LiveData.llmChat([], { action: 'refine_agent', lang: state.lang });
+    if (r && r.error) throw new Error(r.error + (r.detail ? (': ' + r.detail) : ''));
+    const soul = r && r.soul_md;
+    if (soul) {
+      state._agent = { ...state._agent, soul_md: soul };
+      // Persist locally so the manual editor shows the new soul.
+      try { await sb.rpc('ai_agent_set_soul', { p_soul_md: soul }); } catch (_) {}
+    }
+    const el = document.getElementById('agentCard');
+    if (el) el.innerHTML = renderAgentCard(state._agent);
+    bindAgentCard();
+    refreshAgentMemories();
+    toast(isZh ? 'AI 已根据我们的记忆完善了人格' : 'AI tuned its personality from your memories');
+  } catch (e) {
+    toast((isZh ? '完善失败：' : 'Failed: ') + (e.message || e), true);
+  } finally {
+    const b = document.getElementById('refineSoulBtn');
+    if (b) { b.disabled = false; b.textContent = isZh ? '✨ 让 AI 完善人格' : '✨ Perfect personality'; }
+  }
+}
+
 async function refreshAgentMemories() {
   if (!sb || !state._agent) return;
   const grid = document.getElementById('agentMemGrid');
@@ -2516,6 +2553,7 @@ async function refreshAgentMemories() {
     const { data } = await sb.from('agent_memories')
       .select('id, category, content, importance, created_at')
       .eq('agent_id', state._agent.id)
+      .neq('category', '_meta')
       .order('importance', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(50);
@@ -2606,6 +2644,8 @@ function bindAgentCard() {
       refreshAgentMemories();
     }
   };
+  const refine = document.getElementById('refineSoulBtn');
+  if (refine) refine.onclick = () => refineMyAgent();
   const addBtn = document.getElementById('addMemBtn');
   const addInput = document.getElementById('addMemInput');
   if (addBtn && addInput) {

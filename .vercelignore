@@ -31,3 +31,7 @@ README.md
 *.iml
 .DS_Store
 Thumbs.db
+
+# Research clones (not part of the static web app)
+hermes-agent/
+openclaw/

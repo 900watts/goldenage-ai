@@ -827,6 +827,7 @@ async function aiChat(userText) {
       const r = await window.LiveData.llmChat(messages, {
         temperature: 0.65,
         max_tokens: 500,
+        lang: state.lang,
         tools: APP_TOOLS,
         tool_choice: 'auto'
       });
@@ -1647,9 +1648,13 @@ function wizardRoleGate(root, isZh) {
         <div style="font-size:1.2rem;font-weight:700">${t('roleGuardian')}</div>
         <div class="text-soft" style="font-size:.9rem;margin-top:4px">${t('roleGuardianSub')}</div>
       </button>
+      <div style="height:14px"></div>
+      <p class="text-soft" style="font-size:.8rem;line-height:1.5;background:var(--bg);border:1px solid var(--border-app);border-radius:10px;padding:10px 12px">${isZh ? '提示：选「监护人」后无需立即关联家人，可稍后在「我 → 账户」里用对方注册码关联。' : 'Tip: picking "Guardian" does not require pairing now — you can link a family member later in Me → Account using their code.'}</p>
     </div>`;
   document.getElementById('roleElderly').onclick = () => { w.data.role = 'elderly'; renderAuthSetup(root, isZh); };
-  document.getElementById('roleGuardian').onclick = () => { w.data.role = 'guardian'; renderPairInput(root, isZh); };
+  // Guardians are NOT forced to pair at sign-up — pairing is deferred to the
+  // Me screen (renderMe has the elder-pairing UI). This keeps onboarding fast.
+  document.getElementById('roleGuardian').onclick = () => { w.data.role = 'guardian'; renderAuthSetup(root, isZh); };
 }
 
 // Guardian: enter the elder's pairing code / account id to pair now.

@@ -2461,7 +2461,7 @@ function renderFinance(root) {
         // from "user not signed in" (Edge Function returned 401).
         const hint = (r && r._error === 'auth')
           ? (isZh ? '请先登录后再搜索行情。' : 'Please sign in first to search quotes.')
-          : (isZh ? 'Yahoo 找不到该代码，请检查拼写或换一个试试。' : 'Yahoo has no data for that ticker. Check the spelling or try another.');
+          : (isZh ? 'Yahoo 找不到该代码，请用股票代码（AAPL、600519.SS、0700.HK）或公司名（苹果、贵州茅台、腾讯）再试一次。' : 'Yahoo has no data for that ticker. Try the ticker code (AAPL, 600519.SS, 0700.HK) or a company name (Apple, Moutai, Tencent).');
         resEl.innerHTML = `<div class="card" style="padding:14px;color:var(--warn)">${escapeHtml(hint)}<br><span style="color:var(--muted);font-size:.85rem;margin-top:6px;display:inline-block">${isZh ? '搜索的代码' : 'Searched for'}: <code style="font-family:monospace;background:var(--bg);padding:2px 6px;border-radius:6px">${escapeHtml(q)}</code></span></div>`;
         return;
       }

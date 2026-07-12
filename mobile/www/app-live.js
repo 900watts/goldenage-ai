@@ -67,6 +67,102 @@ const FINANCE_SYMBOLS = [
 // Ticker search — match by code, company name, or alias. Returns the
 // best-matching symbol in the FINANCE_SYMBOLS universe, or null.
 // ---------------------------------------------------------------------
+// Many users search by company name (e.g. "Apple" or "贵州茅台"),
+// but Yahoo's chart API only accepts tickers (AAPL, 600519.SS). This
+// map resolves the most common company-name queries to their tickers
+// before sending the request. Aliases cover both English and Chinese.
+// Format: each entry is a name/ticker pair; the search is case-
+// insensitive and matches the full phrase or any single keyword.
+const COMPANY_NAME_MAP = [
+  // US tech megacaps
+  { names: ['苹果', 'apple', 'apple inc', 'iphone', 'mac'], ticker: 'AAPL' },
+  { names: ['微软', 'microsoft', 'msft', 'windows', 'azure', 'copilot'], ticker: 'MSFT' },
+  { names: ['谷歌', 'google', 'alphabet', 'youtube', 'gemini'], ticker: 'GOOGL' },
+  { names: ['亚马逊', 'amazon', 'aws', 'bezos'], ticker: 'AMZN' },
+  { names: ['英伟达', 'nvidia', 'gpu', 'cuda'], ticker: 'NVDA' },
+  { names: ['meta', 'facebook', 'instagram', 'whatsapp', '扎克伯格'], ticker: 'META' },
+  { names: ['特斯拉', 'tesla', 'elon musk', '马斯克', 'model 3', 'model y', 'cybertruck'], ticker: 'TSLA' },
+  { names: ['苹果电脑', 'apple computer'], ticker: 'AAPL' },
+  { names: ['英代尔', 'intel'], ticker: 'INTC' },
+  { names: ['amd', '超微', 'ryzen', 'ryzen'], ticker: 'AMD' },
+  { names: ['网飞', 'netflix'], ticker: 'NFLX' },
+  { names: ['迪士尼', 'disney', 'marvel'], ticker: 'DIS' },
+  { names: ['adobe', 'photoshop', 'illustrator'], ticker: 'ADBE' },
+  { names: ['salesforce'], ticker: 'CRM' },
+  { names: ['shopify'], ticker: 'SHOP' },
+  { names: ['coinbase', '加密货币交易所'], ticker: 'COIN' },
+  { names: ['特斯拉汽车', 'tsla'], ticker: 'TSLA' },
+  // Chinese A-shares (blue chips + tech)
+  { names: ['茅台', '贵州茅台', 'kweichow moutai', '国酒'], ticker: '600519.SS' },
+  { names: ['宁德时代', 'catl', '宁德', '新能源电池'], ticker: '300750.SZ' },
+  { names: ['比亚迪', 'byd', '新能源汽车', 'dmi'], ticker: '002594.SZ' },
+  { names: ['五粮液', 'wuliangye'], ticker: '000858.SZ' },
+  { names: ['平安', '中国平安', 'ping an'], ticker: '601318.SS' },
+  { names: ['招商银行', 'cmb', '招行'], ticker: '600036.SS' },
+  { names: ['美的', '美的集团', 'midea'], ticker: '000333.SZ' },
+  { names: ['腾讯', 'tencent', '微信', 'qq', '微信支付'], ticker: '0700.HK' },
+  { names: ['阿里', '阿里巴巴', 'alibaba', '淘宝', '天猫', '蚂蚁'], ticker: 'BABA' },
+  { names: ['美团', 'meituan'], ticker: '3690.HK' },
+  { names: ['京东', 'jd.com', 'jd'], ticker: '9618.HK' },
+  { names: ['中国移动', 'china mobile'], ticker: '0941.HK' },
+  { names: ['汇丰', '汇丰控股', 'hsbc'], ticker: '0005.HK' },
+  // Taiwan
+  { names: ['台积电', 'tsmc', '台积'], ticker: '2330.TW' },
+  { names: ['鸿海', '鸿海精密', 'foxconn', 'hon hai'], ticker: '2317.TW' },
+  // Japan
+  { names: ['丰田', 'toyota'], ticker: '7203.T' },
+  { names: ['索尼', 'sony', 'playstation'], ticker: '6758.T' },
+  { names: ['软银', 'softbank'], ticker: '9984.T' },
+  { names: ['任天堂', 'nintendo', 'switch'], ticker: '7974.T' },
+  { names: ['基恩士', 'keyence'], ticker: '6861.T' },
+  // Korea
+  { names: ['三星', 'samsung'], ticker: '005930.KS' },
+  { names: ['海力士', 'sk hynix', 'hynix'], ticker: '000660.KS' },
+  { names: ['现代汽车', 'hyundai'], ticker: '005380.KS' },
+  // Europe
+  { names: ['asml', '光刻机'], ticker: 'ASML.AS' },
+  { names: ['sap'], ticker: 'SAP.DE' },
+  { names: ['西门子', 'siemens'], ticker: 'SIE.DE' },
+  { names: ['宝马', 'bmw'], ticker: 'BMW.DE' },
+  { names: ['大众', 'volkswagen', 'vw'], ticker: 'VOW3.DE' },
+  { names: ['lvmh', '路易威登', 'lv'], ticker: 'MC.PA' },
+  { names: ['欧莱雅', "l'oréal", 'loreal'], ticker: 'OR.PA' },
+  { names: ['道达尔', 'total', 'totalenergies'], ticker: 'TTE.PA' },
+  { names: ['赛诺菲', 'sanofi'], ticker: 'SAN.PA' },
+  { names: ['空中客车', 'airbus'], ticker: 'AIR.PA' },
+  { names: ['雀巢', 'nestlé', 'nestle'], ticker: 'NESN.SW' },
+  { names: ['诺华', 'novartis'], ticker: 'NOVN.SW' },
+  { names: ['罗氏', 'roche'], ticker: 'ROG.SW' },
+  // Crypto
+  { names: ['bitcoin', '比特币', 'btc'], ticker: 'BTC-USD' },
+  { names: ['ethereum', '以太坊', 'eth', 'ether'], ticker: 'ETH-USD' }
+];
+
+function findCompanyName(query) {
+  if (!query) return null;
+  const q = String(query).trim().toLowerCase();
+  if (!q) return null;
+  // 1) exact-phrase match across all known company names
+  for (const entry of COMPANY_NAME_MAP) {
+    for (const name of entry.names) {
+      if (name.toLowerCase() === q) return entry.ticker;
+    }
+  }
+  // 2) substring match: if the query contains a known name, return that ticker
+  for (const entry of COMPANY_NAME_MAP) {
+    for (const name of entry.names) {
+      const ln = name.toLowerCase();
+      if (ln.length >= 3 && (q.includes(ln) || ln.includes(q))) {
+        // Avoid false positives: "tes" matches "tesla" but should not match
+        // a single-letter entry.
+        if (q.length <= 2 || ln.length <= 2) continue;
+        return entry.ticker;
+      }
+    }
+  }
+  return null;
+}
+
 function findSymbol(query) {
   if (!query) return null;
   const q = String(query).trim().toLowerCase();
@@ -106,7 +202,14 @@ async function fetchStock(ticker) {
   if (!ticker) return null;
   const t = String(ticker).trim();
   if (!t) return null;
-  const known = findSymbol(t);
+  // 0) Try the company-name resolver. The user often types "Apple"
+  //    or "贵州茅台" instead of the ticker; Yahoo only accepts the
+  //    ticker, so this step converts the human name first.
+  const fromName = findCompanyName(t);
+  if (fromName) {
+    ticker = fromName;
+  }
+  const known = findSymbol(ticker);
   if (known) {
     const r = await fetchQuote(known);
     return { ...r, _universe: 'known' };

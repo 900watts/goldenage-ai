@@ -290,13 +290,30 @@ function initSupabase() {
     });
     sb.supabaseKey = SB_ANON; // expose anon key for LiveData fetch wrappers
     window.sb = sb; // expose for cross-file access (e.g. LiveData.llmChat)
+    // Detect ?login=1 in the URL — this is used by the promo page
+    // "Get Started" button. We want to always show the auth screen
+    // (Sign in / Sign up) instead of jumping straight to the home page
+    // when the user already has a session in localStorage.
+    const forceLogin = new URLSearchParams(window.location.search).get('login') === '1';
     // Check existing session
     sb.auth.getSession().then(({ data }) => {
-      if (data.session) {
+      if (data.session && !forceLogin) {
         sbUser = data.session.user;
         state.signedIn = true;
         applyState();
         loadUserPreferences(sbUser.id);
+      } else if (data.session && forceLogin) {
+        // Session exists but the user asked for the login screen — show
+        // it without signing out (so they can switch account, sign up
+        // a new one, or just continue with the same one).
+        sbUser = data.session.user;
+        state.signedIn = false; // <-- forces renderAuth
+        renderAuth._signedInEmail = sbUser.email;
+        applyState();
+      } else {
+        // No session — normal flow.
+        state.signedIn = false;
+        applyState();
       }
     });
     // Listen for auth changes (magic-link click in email fires SIGNED_IN here)
@@ -1042,7 +1059,21 @@ function renderAuth(root) {
 
   const otpMode = screen === 'otp';
   const pwdMode = screen === 'pwd';
+  const signedInEmail = renderAuth._signedInEmail;
   root.innerHTML = `
+    ${signedInEmail ? `
+    <div class="card" style="width:100%;max-width:480px;padding:14px 18px;margin-bottom:18px;background:var(--bg);display:flex;align-items:center;gap:12px;border:1px solid var(--border-app)">
+      <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--cta));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700">
+        ${escapeHtml(signedInEmail[0] || '?').toUpperCase()}
+      </div>
+      <div style="flex:1;text-align:left;min-width:0">
+        <div style="font-size:.78rem;color:var(--muted)">${isZh?'已登录':'Already signed in as'}</div>
+        <div style="font-size:.95rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(signedInEmail)}</div>
+      </div>
+      <button class="big-btn primary" id="continueCurrentBtn" style="width:auto;min-width:0;padding:8px 16px;font-size:.9rem">${isZh?'进入应用':'Continue'}</button>
+      <button class="big-btn ghost" id="switchAccountBtn" style="width:auto;min-width:0;padding:8px 14px;font-size:.85rem;background:transparent;border:1px solid var(--border-app);color:var(--text)">${isZh?'切换':'Switch'}</button>
+    </div>
+    ` : ''}
     <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 24px;text-align:center;width:100%;min-height:100%">
       <div style="width:96px;height:96px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--cta));display:flex;align-items:center;justify-content:center;margin-bottom:24px">
         <svg width="48" height="48" viewBox="0 0 24 24" fill="white"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
@@ -1136,6 +1167,33 @@ function renderAuth(root) {
     renderAuth._tab = 'pwd';
     renderAuth._screen = 'pwd';
     if (!renderAuth._pwdMode) renderAuth._pwdMode = 'in'; // default to Sign In
+    render();
+  };
+
+  // "Continue" / "Switch account" — only shown when ?login=1 forced
+  // the auth screen even though a session is already present.
+  const cont = document.getElementById('continueCurrentBtn');
+  if (cont) cont.onclick = () => {
+    // Strip the ?login=1 flag and reload into the app.
+    try {
+      const u = new URL(window.location.href);
+      u.searchParams.delete('login');
+      window.location.replace(u.pathname + (u.search ? u.search : '') + u.hash);
+    } catch (_) {
+      window.location.replace('app.html');
+    }
+  };
+  const sw = document.getElementById('switchAccountBtn');
+  if (sw) sw.onclick = async () => {
+    if (!sb) return;
+    try { await sb.auth.signOut(); } catch (_) {}
+    sbUser = null;
+    state.signedIn = false;
+    state.profile = null;
+    state._prefNewsTopics = null;
+    state.chat = [];
+    localStorage.removeItem('signedIn');
+    renderAuth._signedInEmail = null;
     render();
   };
 

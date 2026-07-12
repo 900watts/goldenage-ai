@@ -95,10 +95,11 @@ function findSymbol(query) {
 }
 
 // Fetch a single arbitrary ticker. If the ticker is in the hardcoded
-// universe, we use the fast Sina/Tencent/Yahoo path. Otherwise we try
-// Yahoo Finance's v8 chart API with the raw ticker (works for any stock
-// listed on a Yahoo-supported exchange). Returns the same shape as
-// fetchQuote, with an extra _universe='known'|'external' flag.
+// universe, we use the fast Sina/Tencent/Yahoo path. Otherwise we call
+// our server-side `stock-lookup` Edge Function which fetches Yahoo
+// Finance v8 from a Node.js context (CORS-safe — browsers can't hit
+// Yahoo directly). Returns the same shape as fetchQuote, with an extra
+// _universe='known'|'external' flag.
 async function fetchStock(ticker) {
   if (!ticker) return null;
   const t = String(ticker).trim();
@@ -108,30 +109,42 @@ async function fetchStock(ticker) {
     const r = await fetchQuote(known);
     return { ...r, _universe: 'known' };
   }
-  // External ticker — best-effort: try Yahoo v8 directly. Works for
-  // AAPL, TSLA, 0700.HK, 600519.SS, 2330.TW, 7203.T, etc.
-  const adhoc = { id: t, sina: '', tencent: '', kind: 'us_index' };
+  // External ticker — call the server-side edge function. This bypasses
+  // browser CORS restrictions (Yahoo v8 doesn't set CORS headers).
   try {
-    const res = await fetchWithTimeout(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}?interval=1d&range=5d`, { headers: { 'User-Agent': _UA } }, 7000);
-    if (!res.ok) return { ...adhoc, price: null, change: null, pct: null, name: { zh: t, en: t } };
-    const d = await res.json();
-    const r = d.chart && d.chart.result;
-    if (r && r[0]) {
-      const m = r[0].meta || {};
-      const p = m.regularMarketPrice;
-      const prev = m.chartPreviousClose;
-      if (p != null && prev != null) {
-        return {
-          id: t, name: { zh: t, en: t }, unit: m.currency || 'USD', kind: 'us_index',
-          price: p, change: p - prev, pct: ((p - prev) / prev) * 100,
-          time: m.regularMarketTime || Date.now(), currency: m.currency,
-          _source: 'yahoo', _universe: 'external'
-        };
-      }
+    const sess = await window.sb?.auth?.getSession?.();
+    if (!sess?.data?.session) {
+      return { id: t, name: { zh: t, en: t }, price: null, change: null, pct: null, _universe: 'external', _error: 'auth' };
     }
-    return { ...adhoc, price: null, change: null, pct: null, name: { zh: t, en: t } };
+    const accessToken = sess.data.session.access_token;
+    const r = await fetch(SB_URL + '/functions/v1/stock-lookup', {
+      method: 'POST',
+      headers: { 'apikey': window.sb.supabaseKey || '', 'authorization': 'Bearer ' + accessToken, 'content-type': 'application/json' },
+      body: JSON.stringify({ ticker: t })
+    });
+    if (!r.ok) {
+      return { id: t, name: { zh: t, en: t }, price: null, change: null, pct: null, _universe: 'external' };
+    }
+    const d = await r.json();
+    if (!d.ok) {
+      return { id: t, name: { zh: t, en: t }, price: null, change: null, pct: null, _universe: 'external' };
+    }
+    return {
+      id: d.symbol || t,
+      name: { zh: d.name || t, en: d.name || t },
+      unit: d.currency || 'USD',
+      kind: 'us_index',
+      price: d.price,
+      change: d.change,
+      pct: d.pct,
+      currency: d.currency,
+      time: d.time,
+      _source: d.source || 'yahoo',
+      _universe: 'external',
+      _exchange: d.exchange
+    };
   } catch (_) {
-    return { ...adhoc, price: null, change: null, pct: null, name: { zh: t, en: t } };
+    return { id: t, name: { zh: t, en: t }, price: null, change: null, pct: null, _universe: 'external' };
   }
 }
 

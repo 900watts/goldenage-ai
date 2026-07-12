@@ -603,6 +603,94 @@ function llmGetConfig() { return { provider: 'server', key: '(server-managed)' }
 function llmSetConfig(_p, _k) { /* no-op: server-side */ }
 // Empty providers map kept for legacy callers that introspect it.
 const LLM_PROVIDERS = { server: { name: 'Server (SiliconFlow Qwen3-8B)', keyHint: 'configured in Supabase secrets' } };
+
+// =====================================================================
+// Scam-check LLM analyzer
+// =====================================================================
+// Asks the server-side LLM to evaluate a piece of text as a fraud / scam
+// detection analyst. The model returns a strict JSON object that we
+// parse and shape into the same {verdict, reasons, advice, confidence}
+// the legacy regex-based analyzeScam() returned, so renderVerdict()
+// works without changes.
+//
+// Falls back to the regex analyzer if the LLM call fails (no credits,
+// network error, model returned non-JSON).
+const SCAM_SYSTEM_PROMPT = `You are a fraud and scam detection analyst who protects elderly Chinese users.
+You will receive a piece of text (an SMS, message, ad, link preview, etc.) and must decide if it's safe, suspicious, or dangerous.
+
+Consider phishing patterns common in China:
+- "中奖 / 抽奖 / 客服 / 退款 / 验证码 / 刷单 / 兼职 / 高回报 / 投资 / 提现 / 解冻 / 涉嫌洗钱 / 安全账户"
+- Urgency: "立即 / 现在马上 / 限时 / 即将到期 / 最后一次"
+- Authority impersonation: "公检法 / 银行 / 快递 / 运营商 / 客服 / 110 / 10086 / 10000 / 95588"
+- Reward bait: "免费送 / 红包 / 现金 / 0元 / 1元 / 折扣 / 仅限今日"
+- Cross-platform steering: "加微信 / 加QQ / 复制链接打开 / 浏览器输入 / 下载APP"
+- Information requests: "身份证 / 银行卡 / 密码 / 验证码 / CVV / 人脸"
+- Threats: "起诉 / 逮捕 / 征信 / 列入黑名单 / 销户"
+- Romance/investment: "带你赚钱 / 老师带单 / 内部消息 / 稳赚不赔"
+- New variations of classic scams (parcel redelivery, "your package is held at customs", "your account will be closed", fake delivery notifications, fake hospital bills, fake traffic tickets, AI-voice phishing).
+
+Also consider legitimate text (delivery notifications from known couriers, two-factor codes from your bank, family messages) and do NOT flag those.
+
+Output STRICT JSON only — no prose, no markdown fences — matching this shape exactly:
+{"verdict":"safe|caution|danger","confidence":0.0-1.0,"summary_zh":"<one short Chinese sentence, max 30 chars>","summary_en":"<one short English sentence, max 60 chars>","reasons_zh":["<short Chinese reason 1>","<short Chinese reason 2>"],"reasons_en":["<short English reason 1>","<short English reason 2>"],"advice_zh":"<what the user should do, in Chinese, max 100 chars>","advice_en":"<what the user should do, in English, max 200 chars>"}
+
+Rules:
+- "danger" if there is a clear phishing / scam indicator (asking for codes, money, urgency + authority, etc.).
+- "caution" if there are suspicious elements but it's ambiguous (e.g. could be a real delivery or a fake).
+- "safe" if the text appears benign (family message, legitimate notification from a known service, normal conversation).
+- reasons_zh / reasons_en: 0 to 4 short bullets, each ≤ 20 chars Chinese / 60 chars English. If safe, can be empty.
+- confidence: how sure you are (0.0 to 1.0). 0.9+ for clear danger / clear safe, 0.6-0.8 for caution.`;
+
+async function analyzeScamLLM(input, lang = 'zh') {
+  const r = await llmChat([
+    { role: 'system', content: SCAM_SYSTEM_PROMPT },
+    { role: 'user', content: input }
+  ], { temperature: 0.2, max_tokens: 600 });
+  if (r && r.text) {
+    // Strip ```json fences and parse.
+    const cleaned = r.text.replace(/```(?:json)?/g, '').replace(/```/g, '').trim();
+    // Find the first {...} block in case the model added a leading note.
+    const m = cleaned.match(/\{[\s\S]*\}/);
+    if (m) {
+      try {
+        const obj = JSON.parse(m[0]);
+        if (obj && (obj.verdict === 'safe' || obj.verdict === 'caution' || obj.verdict === 'danger')) {
+          return {
+            verdict: obj.verdict,
+            confidence: Number(obj.confidence) || 0.5,
+            reasons: [
+              ...((obj.reasons_zh || []).map((zh, i) => ({ zh, en: (obj.reasons_en || [])[i] || zh }))),
+            ],
+            advice: {
+              zh: obj.advice_zh || (obj.advice_en || ''),
+              en: obj.advice_en || (obj.advice_zh || ''),
+            },
+            _source: 'llm',
+            _summary: { zh: obj.summary_zh || '', en: obj.summary_en || '' },
+            _credits: r.credits_remaining,
+            _usage: r.usage
+          };
+        }
+      } catch (_) { /* fall through to regex */ }
+    }
+    // Model didn't return valid JSON — surface the text as a "caution" advisory
+    // so the user still gets *something* useful, but mark the source.
+    return {
+      verdict: 'caution',
+      confidence: 0.3,
+      reasons: [{ zh: 'AI 反馈未能结构化，请人工判断', en: 'AI response was not structured; please judge manually' }],
+      advice: {
+        zh: 'AI 给出的判断不够清晰，建议联系家人或拨打 110 咨询。',
+        en: 'The AI analysis was unclear; please check with family or call local authorities.'
+      },
+      _source: 'llm-raw',
+      _raw: r.text
+    };
+  }
+  // LLM call failed — return a clear error marker so the caller can fall back.
+  return { error: r?.error || 'unknown', _fallbackEligible: true };
+}
+
 // ---------- EXPORT ----------
 window.LiveData = {
   fetchQuotes,
@@ -614,6 +702,7 @@ window.LiveData = {
   imageFor,
   wikiImageFor,
   llmChat,
+  analyzeScamLLM,
   llmGetConfig,
   llmSetConfig,
   LLM_PROVIDERS,

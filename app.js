@@ -2483,8 +2483,47 @@ function renderScam(root) {
   document.getElementById('scamCheck').onclick = async () => {
     const v = (renderScam._text||'').trim();
     if (!v) return;
-    renderScam._result = analyzeScam(v);
+    const btn = document.getElementById('scamCheck');
+    const setLoading = (loading) => {
+      if (btn) {
+        btn.disabled = loading;
+        btn.style.opacity = loading ? '0.6' : '';
+        const span = btn.querySelector('span');
+        if (span) span.textContent = loading
+          ? (state.lang==='zh' ? 'AI 分析中…' : 'AI analyzing…')
+          : t('scamCheck');
+      }
+    };
+    setLoading(true);
+    let result = null;
+    let usedLlm = false;
+    let usedFallback = false;
+    // Try the LLM first.
+    try {
+      if (window.LiveData && window.LiveData.analyzeScamLLM) {
+        const r = await window.LiveData.analyzeScamLLM(v, state.lang);
+        if (r && !r.error && (r.verdict === 'safe' || r.verdict === 'caution' || r.verdict === 'danger')) {
+          result = r;
+          usedLlm = true;
+        } else {
+          // LLM failed or returned invalid output — fall back to regex.
+          usedFallback = true;
+        }
+      } else {
+        usedFallback = true;
+      }
+    } catch (e) {
+      console.warn('LLM scam check failed:', e);
+      usedFallback = true;
+    }
+    if (!result) {
+      result = analyzeScam(v);
+      // Tag the source so the UI can show a small badge.
+      result._source = 'rules';
+    }
+    renderScam._result = result;
     render();
+    setLoading(false);
     // Save to Supabase
     if (sbReady()) {
       try {
@@ -2492,9 +2531,10 @@ function renderScam(root) {
           user_id: sbUser.id,
           input_text: v,
           verdict: renderScam._result.verdict,
-          confidence: renderScam._result.confidence,
-          advice: renderScam._result.advice[state.lang],
-          reasoning: renderScam._result.reasons.map(r => r[state.lang]).join('; ')
+          confidence: renderScam._result.confidence || null,
+          advice: (renderScam._result.advice && renderScam._result.advice[state.lang]) || null,
+          reasoning: (renderScam._result.reasons || []).map(r => r[state.lang]).join('; '),
+          source: usedLlm ? 'llm' : (usedFallback ? 'rules-fallback' : 'rules')
         });
       } catch(e) { console.warn('Scam report save failed:', e); }
     }
@@ -2505,12 +2545,17 @@ function renderVerdict(r) {
   const v = r.verdict;
   const vLabel = v === 'safe' ? t('scamSafe') : v === 'caution' ? t('scamCaution') : t('scamDanger');
   const icon = v === 'safe' ? ICON.check : ICON.warn;
+  const sourceBadge = r._source === 'llm' || r._source === 'llm-raw'
+    ? `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;background:linear-gradient(135deg,var(--primary),var(--cta));color:#fff;font-size:.7rem;font-weight:600;letter-spacing:.5px">🤖 AI</span>`
+    : (r._source === 'rules'
+        ? `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;background:var(--bg);color:var(--muted);border:1px solid var(--border-app);font-size:.7rem;font-weight:600">📋 ${state.lang==='zh'?'规则':'Rules'}</span>`
+        : '');
   return `
     <div class="verdict-card ${v}">
       <div class="row">
         <div class="icon">${icon}</div>
-        <div>
-          <h3>${vLabel}</h3>
+        <div style="flex:1;min-width:0">
+          <h3 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${vLabel}${sourceBadge}</h3>
           <div class="confidence">${state.lang==='zh'?'原因':'Reasons'}: ${r.reasons.length}</div>
         </div>
       </div>

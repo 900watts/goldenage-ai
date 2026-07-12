@@ -107,7 +107,7 @@ const I18N = {
     aiGreeting: '您好，我是您的智能伴侣小金。有什么可以帮您的吗？',
     aiQuickMap: '帮我打开地图', aiQuickGold: '今日金价',
     aiReply1: '好的，正在为您打开地图。',
-    aiReply2: '今日黄金价格 ¥678.5/克，比昨天上涨 0.8%。受全球避险情绪影响。',
+    aiReply2: '正在为您打开理财行情，您可以查看黄金、白银、股票等实时走势。',
     aiReply3: '已记录您的服药情况。',
     aiReply4: '正在为您播报今日新闻摘要…',
     aiReplySos: '已通知守护者。您的位置已通过短信发送。',
@@ -199,7 +199,7 @@ const I18N = {
     aiGreeting: "Hello, I'm Xiao Jin, your AI companion. How can I help?",
     aiQuickMap: 'Open the map', aiQuickGold: 'Gold price today',
     aiReply1: 'Sure, opening the map for you.',
-    aiReply2: 'Gold today is ¥678.5/g, up 0.8% from yesterday, driven by global risk-off sentiment.',
+    aiReply2: 'Opening the Finance view — you can check live gold, silver, and stock quotes there.',
     aiReply3: 'I have logged that you took your medication.',
     aiReply4: 'Reading today\'s news digest for you…',
     aiReplySos: 'Your guardian has been notified. Your location was sent by SMS.',
@@ -875,15 +875,27 @@ async function aiScamCheck(text) {
 }
 
 function aiMatchTool(text) {
+  // This router only handles EXPLICIT commands. It must NOT match generic
+  // topic words (price / 价格 / gold / 金价 / stock / 新闻 / 今日 / ...) or it
+  // will hijack a normal question and serve a canned reply instead of letting
+  // the LLM answer. Casual questions fall through to aiChat's LLM path.
   const lower = text.toLowerCase();
-  if (/sos|求助|救命|紧急|fall|chest|emergency|help/i.test(text)) return 'call_sos';
-  // Detect "is this a scam?" / "check this message" intent
-  if (/(这|这是|这条|这个|这个短信|这条信息|is this|check.*scam|verify.*scam|spam|fraud|诈骗\?|可疑\?|骗子\?|骗\?|is it safe|should i|can i trust|能信|可不可以信|看.*是不是|帮我看看|帮我查|帮我.*判断)/i.test(text)) return 'check_scam';
-  if (/(打开|open).*(地图|map)|附近|nearby|药房|医院|pharmacy|hospital/i.test(text)) return 'open_map';
-  if (/(金价|gold|价格|price|行情|finance|股票|stock|指数|index)/i.test(text)) return 'open_finance';
-  if (/(新闻|news|今天.*新闻|今天.*发生|今天的|今日)/i.test(text)) return 'open_news';
-  if (/(药|medication|pill|med)/i.test(text)) return 'open_med';
-  if (/(诈骗|scam|可疑|suspicious|骗子|骗)/i.test(text)) return 'open_scam';
+  // 1) Emergency — safety always wins.
+  if (/sos|求助|救命|紧急|摔倒|fall|chest|emergency|help me|救救我/i.test(text)) return 'call_sos';
+  // 2) "Is this a scam?" / "check this message" intent → run the LLM scam analyzer.
+  if (/(这|这是|这条|这个)(短信|信息|消息|链接|网址)?\s*(是|是不是|会不会).*(诈骗|骗子|假|骗|安全|safe)|is this (a )?(scam|fraud|safe)|check.*(scam|fraud)|verify.*(scam|fraud)|is it safe|should i (trust|click|open|pay)|can i trust|能(信|不能信)|可不可以信|帮我(查|看|判断|确认).*(诈骗|骗子|是不是骗)/i.test(text)) return 'check_scam';
+  // 3) Explicit navigation ONLY. Require a clear verb (open / 打开 / show /
+  //    nearby / go) so a question like "what is the price of space x today"
+  //    never gets snatched by a canned reply and always reaches the LLM.
+  const verb = /(打开|开启|进入|open|show me|show|goto|go to|去看)/i;
+  if (verb.test(text) && /(地图|map)/i.test(text)) return 'open_map';
+  if (/附近|nearby/i.test(text) && /(地图|map|药房|药店|医院|pharmacy|hospital)/i.test(text)) return 'open_map';
+  if (verb.test(text) && /(行情|理财|finance|股票|gold|金价|白银)/i.test(text)) return 'open_finance';
+  if (verb.test(text) && /(新闻|news)/i.test(text)) return 'open_news';
+  if (verb.test(text) && /(用药|吃药|药物|药丸|medication|pill)/i.test(text)) return 'open_med';
+  if (verb.test(text) && /(诈骗|scam|防诈骗|可疑)/i.test(text)) return 'open_scam';
+  // 4) Home-screen quick chips (exact phrases only).
+  if (/^(今日金价|gold price today|查金价|金价查询)\s*[?？.]?$/i.test(text.trim())) return 'open_finance';
   return null;
 }
 

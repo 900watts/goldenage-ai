@@ -72,6 +72,37 @@ function jsonResponse(body, status = 200) {
   });
 }
 
+// Best-effort per-IP daily cap for anonymous chat. Returns true if the
+// request is allowed. Fails OPEN (returns true) on any error so the AI
+// never hard-breaks just because the cap table is missing or unavailable.
+async function checkAnonCap(admin: any, ip: string): Promise<boolean> {
+  try {
+    const day = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+    const ANON_DAILY_LIMIT = 60;
+    const { data, error } = await admin
+      .from('ai_anon_usage')
+      .select('count')
+      .eq('ip', ip)
+      .eq('day', day)
+      .maybeSingle();
+    if (error) return true; // fail open
+    const count = (data && Number.isFinite(data.count)) ? data.count : 0;
+    if (count >= ANON_DAILY_LIMIT) return false;
+    if (data) {
+      await admin.from('ai_anon_usage')
+        .update({ count: count + 1, updated_at: new Date().toISOString() })
+        .eq('ip', ip).eq('day', day);
+    } else {
+      await admin.from('ai_anon_usage')
+        .insert({ ip, day, count: 1, created_at: new Date().toISOString() });
+    }
+    return true;
+  } catch (e) {
+    console.warn('checkAnonCap failed (allowing):', e?.message || e);
+    return true;
+  }
+}
+
 // Pull a JSON object out of an LLM response that may be fenced or wrapped
 // in prose. Returns the parsed object (or {} on failure).
 function extractJson(s) {
@@ -87,6 +118,96 @@ function extractJson(s) {
     try { return JSON.parse(s.slice(start, end + 1)); } catch { return {}; }
   }
   return {};
+}
+
+// =====================================================================
+// STEP 1 — Intent Router (LLM classification)
+// =====================================================================
+// Classifies the user's message into exactly ONE routing intent so that
+// emergency / scam / app-control / chat never cross-contaminate. The router
+// prompt is server-side only (never shipped to the client). Adding a 5th/6th
+// feature is just a new category here + an isolated handler below (modular,
+// no overlap bias — see .workbuddy/memory design notes).
+const ROUTER_PROMPT = `You are the Intent Routing Core for a multi-feature smart assistant. Your sole job is to classify the user's intent into exactly ONE of the following categories.
+
+CATEGORIES:
+- EMERGENCY_RESCUE: User is reporting an immediate crisis, physical injury, severe bleeding, medical emergency, fire, crime in progress, or direct personal danger. (e.g., "HELP IM BLEEDING", "someone is following me", "call an ambulance").
+- ANTI_SCAM_CHECK: User is pasting a suspicious link, message, email, or asking you to evaluate if something is a fraudulent scam. (e.g., "Is this text from Netflix a scam?", "Verify this text: text-billing.info").
+- APP_FEATURE_CONTROL: User wants to control the application layout, map, navigate, toggle settings, or set app events. (e.g., "open the map", "add a reminder for tomorrow", "go to my profile").
+- GENERAL_CONVERSATION: Casual chat, standard questions, greetings, or off-topic prompts.
+
+OUTPUT SCHEMA:
+Return a JSON object containing the classified category and a short explanation. Do not wrap in markdown or add conversational filler.
+{
+  "intent": "EMERGENCY_RESCUE" | "ANTI_SCAM_CHECK" | "APP_FEATURE_CONTROL" | "GENERAL_CONVERSATION",
+  "confidence_score": 0.0 to 1.0
+}`;
+
+const VALID_INTENTS = ['EMERGENCY_RESCUE', 'ANTI_SCAM_CHECK', 'APP_FEATURE_CONTROL', 'GENERAL_CONVERSATION'];
+
+// Never let a router LLM outage block a life-safety trigger. Narrow + only
+// unambiguous emergencies (intentionally excludes bare "help me" so a request
+// like "help me open the map" is never misclassified as SOS).
+function regexEmergencyFallback(text: string): boolean {
+  return /(救命|救救我|我流血|血流|出血|我受伤|受了伤|骨折|瘫痪|昏迷|窒息|溺水|触电|煤气|中毒|救护车|心脏(病|骤停|梗)|心梗|中风|抽搐|癫痫|着火|火灾|烧伤|被攻击|被袭击|被人打|遭抢劫|报警|call\s+(an?\s+)?ambulance|heart\s+attack|stroke|seizure|epilep|unconscious|bleeding|i'?m\s+bleeding|help\s+i'?m|choking|can'?t\s+breathe|someone\s+is\s+following|being\s+attacked|being\s+robbed|fire\s+(in|at)|my\s+house\s+is\s+on\s+fire|trapped|\bsos\b)/i.test(text || '');
+}
+
+async function routeIntent(text: string, lang: string): Promise<{ intent: string; confidence_score: number }> {
+  try {
+    const raw = await callLLM(ROUTER_PROMPT, String(text || ''), { temperature: 0, max_tokens: 120 });
+    const parsed = extractJson(raw);
+    const intent = VALID_INTENTS.includes(parsed.intent) ? parsed.intent : null;
+    const conf = Number.isFinite(parsed.confidence_score) ? Math.max(0, Math.min(1, parsed.confidence_score)) : 0;
+    if (intent) return { intent, confidence_score: conf };
+    // Unparseable model answer → safety net, then general.
+    if (regexEmergencyFallback(String(text))) return { intent: 'EMERGENCY_RESCUE', confidence_score: 0.6 };
+    return { intent: 'GENERAL_CONVERSATION', confidence_score: 0 };
+  } catch (e) {
+    // LLM unreachable: never block safety.
+    if (regexEmergencyFallback(String(text))) return { intent: 'EMERGENCY_RESCUE', confidence_score: 0.5 };
+    return { intent: 'GENERAL_CONVERSATION', confidence_score: 0 };
+  }
+}
+
+// Verdict extraction shared by the scam analyzer (mirrors the client helper
+// in app-live.js so the server can return a structured verdict too).
+function extractScamVerdict(text: string): string {
+  if (!text) return 'caution';
+  const explicit = text.match(/(?:判断结果|verdict)[\s:：]+(danger|caution|safe|危险|谨慎|安全)/i);
+  if (explicit) {
+    const v = explicit[1].toLowerCase();
+    if (v === 'danger' || v === '危险') return 'danger';
+    if (v === 'safe' || v === '安全') return 'safe';
+    return 'caution';
+  }
+  if (/(danger|危险|极可能|highly likely|phishing|是诈骗|clearly a scam)/i.test(text.toLowerCase())) return 'danger';
+  if (/(safe|安全|正常|legitimate|可信|not a scam)/i.test(text.toLowerCase())) return 'safe';
+  return 'caution';
+}
+
+// Dedicated Anti-Scam Phishing Audit prompt. Isolated from the companion
+// persona / memory pipeline so scanned text is never captured into memory
+// and safety does not burn chat credits. Returns a structured verdict.
+async function runScamAnalysis(userText: string, lang: string): Promise<{ verdict: string; text: string }> {
+  const system = lang === 'zh'
+    ? '你是一位专门保护老年用户的防诈骗分析专家。\n\n请分析用户提供的短信、消息或链接，判断其安全性。\n\n请按以下格式输出（直接输出中文文本，不要 JSON）：\n\n判断结果：危险 / 谨慎 / 安全\n\n分析：\n1. 指出可疑点（如：虚假链接、紧急催促、索要个人信息等）\n2. 与正常通知的区别\n\n建议：\n- 给出 2-3 句简短、具体的行动建议\n\n注意：只需给出判断与分析，不要反问用户。'
+    : 'You are a fraud and scam detection expert protecting elderly users.\n\nAnalyze the provided SMS, message, or link and judge its safety.\n\nOutput in this format (plain text, no JSON):\n\nVerdict: danger / caution / safe\n\nAnalysis:\n1. Point out suspicious signals (e.g. fake link, urgency, request for personal info).\n2. Explain how it differs from a legitimate notification.\n\nAdvice:\n- Give 2-3 short, specific action recommendations.\n\nDo not ask the user questions. Just give the analysis and advice.';
+  const raw = await callLLM(system, String(userText), { temperature: 0.2, max_tokens: 700 });
+  return { verdict: extractScamVerdict(raw), text: raw };
+}
+
+// Human-readable label for the crisis_kind enum used by crisis_events.
+function crisisKindLabel(k: string, lang: string): string {
+  const map: Record<string, { zh: string; en: string }> = {
+    sos_button:          { zh: '一键求助', en: 'SOS button' },
+    fall_detected:       { zh: '跌倒检测', en: 'Fall detected' },
+    chest_pain_search:   { zh: '胸痛求助', en: 'Chest-pain help' },
+    med_missed_critical: { zh: '漏药预警', en: 'Missed critical med' },
+    no_activity_24h:     { zh: '24小时无活动', en: 'No activity 24h' },
+    manual_alert:        { zh: '手动报警', en: 'Manual alert' },
+  };
+  const e = map[k];
+  return e ? (lang === 'zh' ? e.zh : e.en) : (k || (lang === 'zh' ? '未知' : 'unknown'));
 }
 
 // Small wrapper around SiliconFlow for our own internal calls (memory
@@ -124,12 +245,14 @@ serve(async (req) => {
     return jsonResponse({ error: 'llm_not_configured' }, 503);
   }
 
-  // 1. Auth: read the user from the bearer token by calling Supabase's
-  // /auth/v1/user endpoint, which validates the JWT and returns the user.
+  // 1. Auth: read the user from the bearer token. We MIRROR the
+  //    management app's behaviour — the AI assistant must work for
+  //    everyone, not only signed-in users. A missing/invalid token does
+  //    NOT 401; instead we serve an anonymous companion chat (the
+  //    SiliconFlow key stays server-side, with no credits and no DB writes).
   const auth = req.headers.get('authorization') || '';
   const m = auth.match(/^Bearer\s+(.+)$/i);
-  if (!m) return jsonResponse({ error: 'no_bearer' }, 401);
-  const accessToken = m[1];
+  const accessToken = m ? m[1] : null;
 
   // Service-role client (for admin actions like calling the RPC with a
   // forced auth.uid() — the RPC is security definer and we pass the user
@@ -138,12 +261,24 @@ serve(async (req) => {
     auth: { persistSession: false, autoRefreshToken: false }
   });
 
-  // Validate the user's JWT by getting their user record.
-  const userRes = await admin.auth.getUser(accessToken);
-  if (userRes.error || !userRes.data?.user) {
-    return jsonResponse({ error: 'invalid_token', detail: userRes.error?.message }, 401);
+  let userId: string | null = null;
+  if (accessToken) {
+    const userRes = await admin.auth.getUser(accessToken);
+    if (userRes.data?.user) userId = userRes.data.user.id;
   }
-  const userId = userRes.data.user.id;
+  if (!userId) {
+    // Best-effort per-IP daily cap so the open endpoint can't be abused.
+    // If the cap table is missing or errors, we still allow (fail open).
+    const ip = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim() || 'unknown';
+    const allowed = await checkAnonCap(admin, ip);
+    if (!allowed) {
+      return jsonResponse({
+        error: 'anon_rate_limited',
+        retry_after: '24h',
+        detail: 'Anonymous chat limit reached for today. Sign in for unlimited, personalized chat.'
+      }, 429);
+    }
+  }
 
   // Read body.
   let body;
@@ -169,18 +304,11 @@ serve(async (req) => {
   // The client sends [system = SCAM prompt, user = text]; we echo the raw
   // model verdict back and let the client parse it.
   if (body?.action === 'scam_check') {
-    const sysMsg = (messages.find((m: any) => m.role === 'system') || {}).content;
     const userMsg = [...messages].reverse().find((m: any) => m.role === 'user');
     if (!userMsg || !userMsg.content) return jsonResponse({ error: 'no_text' }, 400);
     try {
-      const raw = await callLLM(
-        (typeof sysMsg === 'string' && sysMsg.trim())
-          ? sysMsg
-          : 'You are a fraud/scam detection analyst. Decide if the text is safe, caution, or danger. Reply with strict JSON only: {"verdict":"safe|caution|danger","confidence":0.0-1.0,"summary_zh":"","summary_en":"","reasons_zh":[],"reasons_en":[],"advice_zh":"","advice_en":""}.',
-        String(userMsg.content),
-        { temperature: 0.2, max_tokens: 600 }
-      );
-      return jsonResponse({ reply: raw });
+      const scam = await runScamAnalysis(String(userMsg.content), lang);
+      return jsonResponse({ reply: scam.text, scam: { verdict: scam.verdict, text: scam.text } });
     } catch (e) {
       return jsonResponse({ error: 'scam_llm_failed', detail: e?.message || String(e) }, 502);
     }
@@ -190,6 +318,87 @@ serve(async (req) => {
   const tzOffsetMinutes = Number.isFinite(body?.tz_offset_minutes) ? Math.trunc(body.tz_offset_minutes) : 480;
   // Language for auto-config prompts (zh default).
   const lang = (body?.lang === 'en') ? 'en' : 'zh';
+
+  // ── STEP 1: Intent Router (LLM classification) ─────────────────────────
+  // Classify the user's intent BEFORE any other pipeline runs, so an
+  // EMERGENCY never reaches the anti-scam analyzer and APP_FEATURE_CONTROL /
+  // GENERAL_CONVERSATION stay isolated (modular, no overlap bias). The router
+  // is the single source of truth; the client also keeps narrow fast-paths
+  // for instant SOS / navigation but always defers ambiguous input here.
+  const isSpecialAction = body?.action === 'scam_check' || body?.action === 'refine_agent' || body?.action === 'guardian_summary';
+  let forcedIntent = 'GENERAL_CONVERSATION';
+  if (!isSpecialAction) {
+    const lastUser = [...messages].reverse().find((m: any) => m.role === 'user');
+    const userText = (lastUser && typeof lastUser.content === 'string') ? lastUser.content : '';
+    const route = await routeIntent(userText, lang);
+
+    if (route.intent === 'EMERGENCY_RESCUE') {
+      const reply = lang === 'zh'
+        ? '已为您触发紧急求助，正在通知您的守护人并呼叫帮助。请保持冷静，不要挂断。'
+        : "Emergency help has been triggered — your guardian is being notified and help is on the way. Stay calm.";
+      return jsonResponse({
+        intent: 'EMERGENCY_RESCUE',
+        action: 'TRIGGER_EMERGENCY_UI',
+        priority: 'CRITICAL',
+        reply,
+        anonymous: !userId,
+        agent: userId ? undefined : { name: lang === 'zh' ? '小金' : 'Goldie', role: 'companion' }
+      });
+    }
+
+    if (route.intent === 'ANTI_SCAM_CHECK') {
+      try {
+        const scam = await runScamAnalysis(userText, lang);
+        return jsonResponse({
+          intent: 'ANTI_SCAM_CHECK',
+          action: 'SCAM_REPORT',
+          scam: { verdict: scam.verdict, text: scam.text },
+          reply: scam.text,
+          anonymous: !userId,
+          agent: userId ? undefined : { name: lang === 'zh' ? '小金' : 'Goldie', role: 'companion' }
+        });
+      } catch (e) {
+        return jsonResponse({ intent: 'ANTI_SCAM_CHECK', error: 'scam_llm_failed', detail: e?.message || String(e) }, 502);
+      }
+    }
+
+    // APP_FEATURE_CONTROL and GENERAL_CONVERSATION both continue into the
+    // chat pipeline below; only the label we attach differs.
+    forcedIntent = route.intent === 'APP_FEATURE_CONTROL' ? 'APP_FEATURE_CONTROL' : 'GENERAL_CONVERSATION';
+  }
+
+  // ── Anonymous companion chat ──────────────────────────────────────────
+  // Mirrors the management app: the AI answers anyone, no login required.
+  // The SiliconFlow key stays server-side. No credits, no memory, no DB
+  // writes. The client already supplies the companion system prompt in
+  // `messages`, so we forward it straight to the model. By the time we
+  // reach here `userId` is set for signed-in users, so `!userId` means we
+  // are in the anonymous branch.
+  if (!userId) {
+    const r = await fetch(SILICONFLOW_URL, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${SILICONFLOW_KEY}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: SILICONFLOW_MODEL,
+        messages,
+        temperature: Number.isFinite(body?.temperature) ? body.temperature : 0.6,
+        max_tokens: Number.isFinite(body?.max_tokens) ? Math.min(body.max_tokens, 1024) : 512,
+        stream: false
+      })
+    });
+    if (!r.ok) {
+      const d = await r.text();
+      return jsonResponse({ error: 'upstream_error', status: r.status, detail: d.substring(0, 500) }, 502);
+    }
+    const completion = await r.json();
+    const reply = completion?.choices?.[0]?.message?.content ?? '';
+    return jsonResponse({
+      reply,
+      anonymous: true,
+      intent: forcedIntent,
+      agent: { name: lang === 'zh' ? '小金' : 'Goldie', role: 'companion' }
+    });
+  }
 
   // Estimate tokens. Charge 1 credit upfront (small enough that almost any
   // single message will be 1 credit, but reserve the right to charge more for
@@ -286,7 +495,7 @@ serve(async (req) => {
       admin.from('agent_memories').select('category, content, importance, created_at')
         .eq('subject_user_id', elderId).neq('category', '_meta').order('importance', { ascending: false }).order('created_at', { ascending: false }).limit(10),
       admin.from('ai_agents').select('name, role').eq('user_id', elderId).maybeSingle(),
-      admin.from('sos_events').select('created_at, kind, resolved, note')
+      admin.from('crisis_events').select('created_at, kind, resolved_at, payload')
         .eq('user_id', elderId).gte('created_at', since).order('created_at', { ascending: false }).limit(10).catch(() => ({ data: [] })),
     ]);
 
@@ -299,7 +508,7 @@ serve(async (req) => {
     const activity =
       '\n### 防诈骗检测\n' + ((scamRes.data || []).length ? (scamRes.data as any[]).map((r: any) => `- ${r.created_at} → ${r.verdict}`).join('\n') : (lang === 'zh' ? '（无）' : 'none')) +
       '\n### 用药与提醒\n' + ((remRes.data || []).length ? (remRes.data as any[]).map((r: any) => `- ${r.label} (${r.status})`).join('\n') : (lang === 'zh' ? '（无）' : 'none')) +
-      '\n### SOS 求助\n' + ((sosRes.data || []).length ? (sosRes.data as any[]).map((r: any) => `- ${r.created_at} ${r.kind} ${r.resolved ? (lang === 'zh' ? '已处理' : 'resolved') : (lang === 'zh' ? '待处理' : 'open')}`).join('\n') : (lang === 'zh' ? '（无）' : 'none')) +
+      '\n### SOS 求助\n' + ((sosRes.data || []).length ? (sosRes.data as any[]).map((r: any) => `- ${r.created_at} ${crisisKindLabel(r.kind, lang)} ${r.resolved_at ? (lang === 'zh' ? '已处理' : 'resolved') : (lang === 'zh' ? '待处理' : 'open')}`).join('\n') : (lang === 'zh' ? '（无）' : 'none')) +
       '\n### 长者记忆\n' + ((elderMemRes.data || []).length ? (elderMemRes.data as any[]).map((m: any) => `- [${m.category}] ${m.content}`).join('\n') : (lang === 'zh' ? '（无）' : 'none'));
 
     const summarySys = lang === 'zh'
@@ -370,7 +579,7 @@ try {
         // Elder's agent info (so we can refer to them by their AI's name).
         admin.from('ai_agents').select('name, role').eq('user_id', elderId).maybeSingle(),
         // SOS events (if any) in the last 24h.
-        admin.from('sos_events').select('created_at, kind, resolved, note')
+        admin.from('crisis_events').select('created_at, kind, resolved_at, payload')
           .eq('user_id', elderId).gte('created_at', since).order('created_at', { ascending: false }).limit(10).then(r => r).catch(() => ({ data: [] })),
       ]);
 
@@ -400,7 +609,7 @@ try {
             : '（无）')
         + '\n**SOS 求助**:\n'
         + (sosRes.data && sosRes.data.length
-            ? sosRes.data.map((r: any) => `- ${r.created_at} ${r.kind} ${r.resolved ? '已处理' : '待处理'}${r.note ? ' 备注: ' + r.note : ''}`).join('\n')
+            ? sosRes.data.map((r: any) => `- ${r.created_at} ${crisisKindLabel(r.kind, lang)} ${r.resolved_at ? '已处理' : '待处理'}`).join('\n')
             : '（无）')
         + '\n\n> 当守护者问"今天长者怎么样"或"我爸妈最近情况"时，**先根据上面这些数据回答**，再补充你自己的判断。'
         + '\n> 简洁明了。突出"安全"和"异常"两类信息。';
@@ -553,6 +762,7 @@ try {
 
   return jsonResponse({
     reply,
+    intent: forcedIntent,
     tool_calls: toolCalls,
     tool_results: toolResults,
     usage: { prompt_tokens: inTokens, completion_tokens: outTokens, total_tokens: inTokens + outTokens, credits_used: realCredits },

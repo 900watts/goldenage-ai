@@ -827,6 +827,8 @@ const TOOLS = {
   open_news:   { reply: () => t('aiReply4'), action: () => go('news') },
   open_med:    { reply: () => t('aiReply3'), action: () => go('medication') },
   open_scam:   { reply: () => state.lang==='zh' ? '好的，已为您打开防诈骗检测。' : 'Opening Anti-Scam Shield.', action: () => go('scam') },
+  open_guardian:{ reply: () => state.lang==='zh' ? '好的，已为您打开守护者。' : 'Opening Guardian.', action: () => go('guardian') },
+  open_me:     { reply: () => state.lang==='zh' ? '好的，已为您打开「我的」。' : 'Opening Me.', action: () => go('me') },
   call_sos:    { reply: () => t('aiReplySos'), action: () => triggerSos(false) },
 };
 
@@ -848,52 +850,37 @@ function scamDangerReply(r) {
     : `⚠️ Warning: this message is very likely a scam.\n\n${(r.advice && r.advice.en) || ''}\n\nSignals detected:\n${reasons}\n\nOpening Anti-Scam Shield for full analysis.`;
 }
 
-// Helper: scan a message for scam signals. The verdict comes DIRECTLY from
-// the LLM via analyzeScamLLM — no regex rule list is used. We only hard-block
-// the conversation on a clear DANGER verdict so "caution" / "safe" verdicts
-// do not hijack normal chat.
-async function aiScamCheck(text) {
-  if (!text || text.length < 15) return null;
-  // Skip if text is clearly a chat command (already handled by aiMatchTool)
-  if (aiMatchTool(text)) return null;
+// ── Intent system (client side) ──────────────────────────────────────────
+// The authoritative classifier is the server-side Intent Router LLM (see
+// supabase/functions/llm-chat). The two helpers below are narrow, instant
+// CLIENT fast-paths that keep latency at zero for the most common cases and
+// guarantee life-safety never depends on the network:
+//   • isEmergency()  → trigger SOS immediately (defense-in-depth).
+//   • parseAppIntent() → execute explicit navigation/settings locally.
+// Anything ambiguous is deferred to the server router.
 
-  if (window.LiveData && window.LiveData.analyzeScamLLM) {
-    const r = await window.LiveData.analyzeScamLLM(text, state.lang);
-    if (r && r.verdict && !r.error) {
-      if (r.verdict === 'danger') {
-        return { reply: scamDangerReply(r), tool: '🛡️ ai_scam_check', action: () => go('scam') };
-      }
-      // caution / safe: don't interrupt the conversation.
-      return null;
-    }
-  }
-  // LLM unavailable or failed: don't silently fall back to rules.
-  return null;
+// Narrow, instant emergency check. Only unambiguous emergencies — deliberately
+// excludes bare "help me" so "help me open the map" is never misclassified.
+function isEmergency(text) {
+  return /(救命|救救我|我流血|血流|出血|我受伤|受了伤|骨折|瘫痪|昏迷|窒息|溺水|触电|煤气|中毒|救护车|心脏(病|骤停|梗)|心梗|中风|抽搐|癫痫|着火|火灾|烧伤|被攻击|被袭击|被人打|遭抢劫|报警|call\s+(an?\s+)?ambulance|heart\s+attack|stroke|seizure|epilep|unconscious|bleeding|i'?m\s+bleeding|help\s+i'?m|choking|can'?t\s+breathe|someone\s+is\s+following|being\s+attacked|being\s+robbed|fire\s+(in|at)|my\s+house\s+is\s+on\s+fire|trapped|\bsos\b)/i.test(text || '');
 }
 
-function aiMatchTool(text) {
-  // This router only handles EXPLICIT commands. It must NOT match generic
-  // topic words (price / 价格 / gold / 金价 / stock / 新闻 / 今日 / ...) or it
-  // will hijack a normal question and serve a canned reply instead of letting
-  // the LLM answer. Casual questions fall through to aiChat's LLM path.
-  const lower = text.toLowerCase();
-  // 1) Emergency — safety always wins. Broad injury / distress vocabulary so
-  // messages like "HELP IM BLEEDING" route to SOS instead of scam check.
-  if (/sos|求助|救命|紧急|摔倒|fall|fell|heart attack|stroke|seizure|unconscious|chok|can't breathe|cannot breathe|fire|burn|attacked|assaulted|robbed|pain|hurt|injur|wound|bleeding|bleed|blood|dying|dead|ambulance|police|\bhelp\b|help me|help us|help him|help her|help i'm|help im|help i am|救救我|救命啊|我需要帮助|帮帮我|流血|出血|受伤了|好痛|痛死了|不能呼吸|窒息|着火了|火灾|烧伤了|被攻击|心脏病|中风|抽搐|昏迷|救护车|报警|警察/i.test(text)) return 'call_sos';
-  // 2) "Is this a scam?" / "check this message" intent → run the LLM scam analyzer.
-  if (/(这|这是|这条|这个)(短信|信息|消息|链接|网址)?\s*(是|是不是|会不会).*(诈骗|骗子|假|骗|安全|safe)|is this (a )?(scam|fraud|safe)|check.*(scam|fraud)|verify.*(scam|fraud)|is it safe|should i (trust|click|open|pay)|can i trust|能(信|不能信)|可不可以信|帮我(查|看|判断|确认).*(诈骗|骗子|是不是骗)/i.test(text)) return 'check_scam';
-  // 3) Explicit navigation ONLY. Require a clear verb (open / 打开 / show /
-  //    nearby / go) so a question like "what is the price of space x today"
-  //    never gets snatched by a canned reply and always reaches the LLM.
-  const verb = /(打开|开启|进入|open|show me|show|goto|go to|去看)/i;
+// Client-side fast-path for EXPLICIT app-control commands (navigation /
+// settings). Deterministic + instant — executed locally without a round-trip.
+// Ambiguous phrasing (e.g. "I want to see the news") falls through to the
+// server Intent Router, which classifies it APP_FEATURE_CONTROL and runs the
+// chat pipeline (the LLM then emits a navigate tool we execute).
+function parseAppIntent(text) {
+  const verb = /(打开|开启|进入|open|show me|show|goto|go to|去看|切换|toggle)/i;
   if (verb.test(text) && /(地图|map)/i.test(text)) return 'open_map';
   if (/附近|nearby/i.test(text) && /(地图|map|药房|药店|医院|pharmacy|hospital)/i.test(text)) return 'open_map';
   if (verb.test(text) && /(行情|理财|finance|股票|gold|金价|白银)/i.test(text)) return 'open_finance';
   if (verb.test(text) && /(新闻|news)/i.test(text)) return 'open_news';
   if (verb.test(text) && /(用药|吃药|药物|药丸|medication|pill)/i.test(text)) return 'open_med';
   if (verb.test(text) && /(诈骗|scam|防诈骗|可疑)/i.test(text)) return 'open_scam';
-  // 4) Home-screen quick chips (exact phrases only).
-  if (/^(今日金价|gold price today|查金价|金价查询)\s*[?？.]?$/i.test(text.trim())) return 'open_finance';
+  if (verb.test(text) && /(守护|guardian|家人|亲人)/i.test(text)) return 'open_guardian';
+  if (verb.test(text) && /(我的|设置|me|settings|profile|个人中心|账号)/i.test(text)) return 'open_me';
+  if (/^(今日金价|gold price today|查金价|金价查询)\s*[?？.]?$/i.test((text || '').trim())) return 'open_finance';
   return null;
 }
 
@@ -909,20 +896,28 @@ function guardianAskIntent(text) {
 }
 
 async function aiChat(userText) {
-  // 0) Safety-first: emergency/distress messages skip everything else.
-  if (aiMatchTool(userText) === 'call_sos') {
+  // 0) Defense-in-depth: unambiguous emergencies trigger SOS instantly,
+  //    with zero network dependency/latency. The server-side Intent Router
+  //    is the authoritative classifier and also catches emergencies this
+  //    regex misses (e.g. "HELP IM BLEEDING" without the word "bleeding").
+  if (isEmergency(userText)) {
     triggerSos(false);
     return { reply: t('aiReplySos'), tool: '🚨 SOS' };
   }
 
-  // 1) First, run a scam check on the message itself (verdict from the LLM).
-  const scam = await aiScamCheck(userText);
-  if (scam) {
-    if (scam.action) scam.action();
-    return { reply: scam.reply, tool: scam.tool };
+  // 1) Explicit app-control commands (open map, finance, …) execute locally
+  //    and instantly. Everything else defers to the server Intent Router.
+  const fast = parseAppIntent(userText);
+  if (fast && TOOLS[fast]) {
+    TOOLS[fast].action();
+    return { reply: TOOLS[fast].reply(), tool: '🔧 ' + fast };
   }
 
-  // 1b) Guardian asking about the elder's recent status → summarize the
+  // 1b) Cheap local replies (greetings, time) — no LLM roundtrip needed.
+  const quick = localQuickReply(userText);
+  if (quick) return { reply: quick };
+
+  // 1c) Guardian asking about the elder's recent status → summarize the
   //     elder's chat history (stored in Supabase) via the LLM.
   if ((state._agent?.role === 'protector' || state.profile?.role === 'guardian') && guardianAskIntent(userText)) {
     if (window.LiveData && window.LiveData.llmChat) {
@@ -952,43 +947,12 @@ async function aiChat(userText) {
     }
   }
 
-  // 2) Tool routing for explicit requests ("open the map", "gold today", ...).
-  //    These are fast & reliable — skip the LLM roundtrip.
-  const tool = aiMatchTool(userText);
-  if (tool) {
-    if (tool === 'check_scam') {
-      const quoted = (userText.match(/[""「]([^""」]+)[""」]/) || [])[1] || '';
-      if (quoted && window.LiveData && window.LiveData.analyzeScamLLM) {
-        const r = await window.LiveData.analyzeScamLLM(quoted, state.lang);
-        if (r && r.verdict && !r.error) {
-          const verdictLabel = r.verdict === 'danger' ? (state.lang==='zh'?'极可能是诈骗':'Highly likely a scam') : r.verdict === 'caution' ? (state.lang==='zh'?'信息中有可疑内容':'Suspicious content') : (state.lang==='zh'?'未发现明显风险':'No obvious risk');
-          const fullText = r.text || '';
-          return {
-            reply: `${verdictLabel}\n\n${fullText}`,
-            tool: '🛡️ check_scam'
-          };
-        }
-        // LLM failed — show error instead of falling back to rules.
-        return {
-          reply: state.lang === 'zh' ? 'AI 分析暂时不可用，请稍后再试。' : 'AI analysis is temporarily unavailable. Please try again later.',
-          tool: '🛡️ check_scam'
-        };
-      }
-      TOOLS.open_scam.action();
-      return { reply: TOOLS.open_scam.reply(), tool: '🔧 open_scam' };
-    }
-    const def = TOOLS[tool];
-    def.action();
-    return { reply: def.reply(), tool: '🔧 ' + tool };
-  }
-
-  // 3) Cheap local replies (greetings, time) — no LLM roundtrip needed.
-  const quick = localQuickReply(userText);
-  if (quick) return { reply: quick };
-
-  // 4) Real LLM call. Server-side: the browser calls our Supabase Edge
-  //    Function which holds the SiliconFlow key and enforces the credits
-  //    system. We no longer need a user-configured key.
+  // 2) Intent Router (server). One call classifies the message into
+  //    EMERGENCY_RESCUE / ANTI_SCAM_CHECK / APP_FEATURE_CONTROL /
+  //    GENERAL_CONVERSATION; the server then routes accordingly and returns a
+  //    structured payload we dispatch locally. Emergency & scam are handled
+  //    entirely server-side (no extra round-trip); app-control & general run
+  //    the chat pipeline and return the reply + any tool calls to execute.
   if (window.LiveData && window.LiveData.llmChat) {
     const systemPrompt = buildLlmSystemPrompt();
     const messages = [
@@ -1003,14 +967,37 @@ async function aiChat(userText) {
         tools: APP_TOOLS,
         tool_choice: 'auto'
       });
-      if (r && (r.text || (r.tool_calls && r.tool_calls.length))) {
-        // Update the credits indicator in the Me card (if it's open).
+      if (!r) return { reply: state.lang==='zh' ? 'AI 没有返回内容。' : 'The AI returned no content.', tool: '⚠️' };
+
+      // ── Emergency routed by the server Router LLM ──
+      if (r.intent === 'EMERGENCY_RESCUE') {
+        triggerSos(false);
+        return { reply: (r.reply || t('aiReplySos')), tool: '🚨 SOS' };
+      }
+
+      // ── Anti-scam routed by the server Router LLM ──
+      if (r.intent === 'ANTI_SCAM_CHECK') {
+        const scam = r.scam || {};
+        if (scam.verdict === 'danger') {
+          setTimeout(() => { try { go('scam'); } catch (_) {} }, 300);
+        }
+        return {
+          reply: scam.text
+            ? scamDangerReply({ text: scam.text })
+            : (state.lang === 'zh' ? '未检测到明显风险。' : 'No obvious risk found.'),
+          tool: '🛡️ 防诈骗检测'
+        };
+      }
+
+      // ── App-feature control / general conversation ── both ran through the
+      //    chat pipeline; execute any tool calls (navigate, reminder, …).
+      if (r.text || (r.tool_calls && r.tool_calls.length)) {
         const remEl = document.getElementById('aiCreditsRemaining');
         if (remEl && r.credits_remaining != null) remEl.textContent = r.credits_remaining;
-        // Execute any tool calls the model returned. If a tool fires
-        // we close the chat sheet and let the user see the result.
         const calls = r.tool_calls || [];
-        let toolLabel = '🤖 Qwen3-8B';
+        let toolLabel = r.intent === 'APP_FEATURE_CONTROL'
+          ? (state.lang==='zh' ? '🔧 应用操作' : '🔧 App action')
+          : '🤖 Qwen3-8B';
         for (const c of calls) {
           const fn = c.function || {};
           const name = fn.name;
@@ -1018,7 +1005,6 @@ async function aiChat(userText) {
           try { args = fn.arguments ? JSON.parse(fn.arguments) : {}; } catch (_) {}
           if (name === 'navigate' && args.route) {
             toolLabel = '🧭 → ' + args.route;
-            // Defer navigation so the user sees the tool-label first.
             setTimeout(() => { try { go(args.route); } catch(_) {} }, 300);
           } else if (name === 'set_language' && (args.lang === 'zh' || args.lang === 'en')) {
             toolLabel = '🌐 → ' + args.lang;
@@ -1029,7 +1015,6 @@ async function aiChat(userText) {
             toolLabel = '🆘 SOS';
             setTimeout(() => { try { triggerSos(); } catch(_) {} }, 300);
           } else if (name === 'open_ai_sheet') {
-            // already open; no-op
             toolLabel = '💬 AI';
           } else if (name === 'open_finance') {
             toolLabel = '💰 行情';
@@ -1053,13 +1038,10 @@ async function aiChat(userText) {
             toolLabel = '⚙️ 我的';
             setTimeout(() => { try { go('me'); } catch(_) {} }, 300);
           } else if (name === 'set_reminder') {
-            // Already executed server-side; find the matching tool_result
-            // (same index in r.tool_results) and surface it.
             const res = (r.tool_results || []).find(x => x && x.name === 'set_reminder' && JSON.stringify(x.args) === JSON.stringify(args));
             const rem = res && res.result && res.result.reminder;
             if (res && res.result && res.result.ok && rem) {
               toolLabel = state.lang==='zh' ? '⏰ 已设置提醒' : '⏰ Reminder set';
-              // Speak + toast a confirmation.
               const when = rem.kind === 'daily'
                 ? (state.lang==='zh' ? `每天 ${rem.time_of_day}` : `every day at ${rem.time_of_day}`)
                 : new Date(rem.next_fire_at).toLocaleString(state.lang==='zh' ? 'zh-CN' : 'en-US', { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' });
@@ -1068,7 +1050,6 @@ async function aiChat(userText) {
                 : `Got it. I set a reminder: ${rem.label}, ${when}.`;
               toast(speech);
               setTimeout(() => speak(speech), 400);
-              // Open the Reminders tab so the user sees their new entry.
               setTimeout(() => { try { go('reminders'); } catch(_) {} }, 800);
             } else if (res && res.result && res.result.error) {
               toolLabel = state.lang==='zh' ? '⚠️ 提醒设置失败' : '⚠️ Reminder failed';
@@ -1083,8 +1064,6 @@ async function aiChat(userText) {
               toolLabel = state.lang==='zh' ? '⚠️ 取消失败' : '⚠️ Cancel failed';
             }
           } else if (name === 'list_reminders') {
-            // After the model returns the list, open the Reminders tab
-            // so the user sees the rendered table.
             toolLabel = state.lang==='zh' ? '📋 提醒列表' : '📋 Reminders';
             setTimeout(() => { try { go('reminders'); } catch(_) {} }, 300);
           } else if (name === 'save_memory') {
@@ -1097,9 +1076,7 @@ async function aiChat(userText) {
                 : 'Got it — I\'ll remember that.';
               toast(ack);
               setTimeout(() => speak(ack), 400);
-              // Refresh the agent in memory so subsequent calls see the new memory_count.
               if (state._agent) state._agent.memory_count = (state._agent.memory_count || 0) + 1;
-              // Re-render the AI section if it's open.
               try { const el = document.getElementById('agentMemGrid'); if (el) refreshAgentMemories().catch(() => {}); } catch(_) {}
             } else {
               toolLabel = state.lang==='zh' ? '⚠️ 记住失败' : '⚠️ Remember failed';
@@ -1118,7 +1095,7 @@ async function aiChat(userText) {
         }
         return { reply: (r.text || '').trim(), tool: toolLabel };
       }
-      if (r && r.error) {
+      if (r.error) {
         if (r.error === 'insufficient_credits') {
           return { reply: state.lang==='zh'
             ? `今日 AI 信用已用完（剩余 ${r.credits_remaining} / ${r.credits_total}）。明天 00:00 自动补满。`
@@ -1138,7 +1115,7 @@ async function aiChat(userText) {
     }
   }
 
-  // 5) No LiveData (e.g. CDN failed) — soft fallback.
+  // 3) No LiveData (e.g. CDN failed) — soft fallback.
   return { reply: state.lang==='zh'
     ? 'AI 助手暂时不可用。我可以帮您：打开地图 / 打开新闻 / 朗读今日金价 / 设置用药提醒。'
     : "The AI assistant is temporarily unavailable. In the meantime, I can open the map, open news, read today's gold price, or set medication reminders.",

@@ -110,6 +110,13 @@ async function callLLM(system, user, opts = {}) {
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
+  // GET / HEAD: lightweight health probe. Direct browser hits, uptime
+  // monitors, and link previews send GET — answering with a 200 here
+  // (instead of a bare `method_not_allowed`) keeps those harmless while
+  // the real chat path remains POST-only below.
+  if (req.method === 'GET' || req.method === 'HEAD') {
+    return jsonResponse({ ok: true, service: 'llm-chat', status: 'healthy', note: 'Send a POST with {messages:[...]} to talk to the AI.' });
+  }
   if (req.method !== 'POST') return jsonResponse({ error: 'method_not_allowed' }, 405);
 
   try {

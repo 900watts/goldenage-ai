@@ -50,7 +50,7 @@ const I18N = {
     medTitle: '用药管理', medTaken: '已服药', medSkip: '跳过', medAdd: '添加提醒',
     medTake1: '降压药', medTake1Sub: '08:00 · 20:00 · 饭后服用',
     medTake2: '钙片', medTake2Sub: '12:00 · 随午餐',
-    remTitle: '提醒', remSub: 'AI 帮您记住重要的事情', remAdd: '+ 添加提醒', remUpcoming: '即将到期', remHistory: '历史', remEmpty: '还没有提醒。让 AI 帮您添加一个吧。', remCancel: '取消', remHint: '试试说："提醒我两小时后吃阿司匹林"或"每天早上8点提醒我量血压"', remFired: '已触发', remCancelled: '已取消', remSnooze: '⏰ 5分钟后再说', remGot: '知道了 ✓', remTime: '原定时间', remSnoozed: '已延后 5 分钟',
+    remTitle: '提醒', remSub: '让 AI 帮您记住任何事情', remAdd: '+ 添加提醒', remUpcoming: '即将到期', remHistory: '历史', remEmpty: '还没有提醒。让 AI 帮您添加一个吧。', remCancel: '取消', remHint: '试试说："两小时后提醒我给女儿打电话" 或 "每天早上8点提醒我量血压"', remFired: '已触发', remCancelled: '已取消', remSnooze: '⏰ 5分钟后再说', remGot: '知道了 ✓', remTime: '原定时间', remSnoozed: '已延后 5 分钟',
     meTitle: '我的', meName: '', meEmergency: '', meNoEmergency: '未设置紧急联系人',
     meLang: '语言', meAccess: '无障碍设置', meBigText: '大字模式', meDark: '深色模式',
     meAi: 'AI 助手设置', meAiProvider: '服务', meAiKey: 'API Key', meAiKeyPh: '在此粘贴您的 API Key', meAiSave: '保存', meAiClear: '清除', meAiStatus: '状态', meAiStatusOff: '未配置', meAiStatusOn: '已配置', meAiNote: 'API Key 仅保存在您的浏览器中（localStorage），不会上传到任何服务器。',
@@ -141,7 +141,7 @@ const I18N = {
     medTitle: 'Medication', medTaken: 'Taken', medSkip: 'Skip', medAdd: 'Add Reminder',
     medTake1: 'Blood Pressure Meds', medTake1Sub: '08:00 · 20:00 · with food',
     medTake2: 'Calcium', medTake2Sub: '12:00 · with lunch',
-    remTitle: 'Reminders', remSub: 'Let the AI remember things for you', remAdd: '+ Add reminder', remUpcoming: 'Upcoming', remHistory: 'History', remEmpty: 'No reminders yet. Ask the AI to set one for you.', remCancel: 'Cancel', remHint: 'Try: "remind me to take aspirin in 2 hours" or "remind me every day at 8am to check my blood pressure"', remFired: 'Fired', remCancelled: 'Cancelled', remSnooze: '⏰ Snooze 5m', remGot: 'Got it ✓', remTime: 'Scheduled for', remSnoozed: 'Snoozed 5 minutes',
+    remTitle: 'Reminders', remSub: 'Let the AI remember anything for you', remAdd: '+ Add reminder', remUpcoming: 'Upcoming', remHistory: 'History', remEmpty: 'No reminders yet. Ask the AI to set one for you.', remCancel: 'Cancel', remHint: 'Try: "remind me to call my daughter in 2 hours" or "remind me every day at 8am to check my blood pressure"', remFired: 'Fired', remCancelled: 'Cancelled', remSnooze: '⏰ Snooze 5m', remGot: 'Got it ✓', remTime: 'Scheduled for', remSnoozed: 'Snoozed 5 minutes',
     meTitle: 'Profile', meName: '', meEmergency: '', meNoEmergency: 'No emergency contact set',
     meLang: 'Language', meAccess: 'Accessibility', meBigText: 'Big Text Mode', meDark: 'Dark Mode',
     meAi: 'AI Assistant Settings', meAiProvider: 'Provider', meAiKey: 'API Key', meAiKeyPh: 'Paste your API key here', meAiSave: 'Save', meAiClear: 'Clear', meAiStatus: 'Status', meAiStatusOff: 'Not configured', meAiStatusOn: 'Configured', meAiNote: 'API key is stored in your browser (localStorage) only and never sent to any server except the AI provider itself.',
@@ -977,6 +977,7 @@ function buildLlmSystemPrompt() {
       `- 闲聊陪伴、问候、寒暄\n` +
       `- 解释生活常识、节庆习俗、健康养生小贴士\n` +
       `- 提醒用药、量血压、关注天气变化\n` +
+      `- 设置任意一次性或每天的提醒（服药、打电话、喝水、散步、吃饭、看电视、吃药、复诊、纪念日等）——用户说"提醒我…"时，调用 set_reminder 工具\n` +
       `- 朗读屏幕上的内容（用户会点击"朗读"按钮）`
     : `You are "Xiao Jin", a warm AI companion for elderly users. The user is ${name}${pref ? ` (they prefer to be called "${pref}")` : ''}${age}${city}${guardian}. Today is ${timeStr}.\n\n` +
       `Reply rules:\n` +
@@ -986,7 +987,7 @@ function buildLlmSystemPrompt() {
       `4. Don't make things up; if you don't know, say so.\n` +
       `5. For scam/suspicious content, warn immediately and suggest calling family or local authorities.\n` +
       (topicsStr ? `6. User's news interests: ${topicsStr}.\n` : '') +
-      `\nYou can: chat warmly, explain everyday topics, suggest healthy habits, or read content aloud when the user taps the speaker.`;
+      `\nYou can: chat warmly, explain everyday topics, suggest healthy habits, set arbitrary one-off or daily reminders (for anything: medication, calling family, drinking water, going for a walk, meals, TV, doctor's appointments, anniversaries) by calling the set_reminder tool, or read content aloud when the user taps the speaker.`;
 }
 
 // Map wizard topic keys -> human label in current language (built once).

@@ -15,7 +15,16 @@ const PROJECT_URL = Deno.env.get('SUPABASE_URL') || 'https://exvlolipycabnqiapti
 const SR_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 
 Deno.serve(async (req) => {
-  if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 });
+  // CORS preflight (browsers send OPTIONS first when the call isn't a
+  // simple GET; we return the standard CORS headers so the browser
+  // then sends the real POST).
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', {
+      status: 200,
+      headers: corsHeaders()
+    });
+  }
+  if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders() });
   const body = await req.json().catch(() => ({}));
   const ticker = String(body.ticker || '').trim();
   if (!ticker) return jsonResponse({ ok: false, error: 'Missing ticker' }, 400);
@@ -59,9 +68,18 @@ Deno.serve(async (req) => {
   }
 });
 
+function corsHeaders() {
+  return {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Content-Type': 'application/json'
+  };
+}
+
 function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+    headers: corsHeaders()
   });
 }

@@ -59,6 +59,8 @@ const FINANCE_SYMBOLS = [
   // --- Crypto ---
   { sina: '',         tencent: '',           id: 'BTC-USD',  name: { zh: '比特币 (USD)',     en: 'Bitcoin (USD)' },       unit: 'USD',     kind: 'crypto',
     aliases: { zh: ['比特币','btc','bitcoin'], en: ['bitcoin','btc'] } },
+  { sina: '',         tencent: '',           id: 'ETH-USD',  name: { zh: '以太坊 (USD)',     en: 'Ethereum (USD)' },      unit: 'USD',     kind: 'crypto',
+    aliases: { zh: ['以太坊','eth','ethereum','以太'], en: ['ethereum','eth'] } },
 ];
 
 // ---------------------------------------------------------------------

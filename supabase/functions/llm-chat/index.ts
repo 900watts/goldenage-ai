@@ -112,6 +112,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return jsonResponse({ error: 'method_not_allowed' }, 405);
 
+  try {
   if (!SILICONFLOW_KEY) {
     return jsonResponse({ error: 'llm_not_configured' }, 503);
   }
@@ -246,6 +247,7 @@ serve(async (req) => {
 // 3. Build the system prompt: load the top agent_memories + (for guardian
 //    users) recent activity of the paired elder. Then call SiliconFlow.
 let completion;
+let memories: any[] = [];
 try {
   // 3b. Read the user's top memories (exclude the internal _meta sentinel
   //     row we use to track soul-refinement state).
@@ -256,7 +258,7 @@ try {
     .order('importance', { ascending: false })
     .order('created_at', { ascending: false })
     .limit(20) : { data: [] };
-  const memories: any[] = memRes.data || [];
+  memories = memRes.data || [];
 
   // 3c. If the user is a guardian, find the paired elder and load the
   //     last 24h of their activity (scam_reports, medication_schedules,
@@ -463,6 +465,11 @@ try {
     auto_memories: capture,
     soul_refined: soulRefined
   });
+  } catch (e) {
+    // Never leak internal stack traces / messages to clients; log server-side only.
+    console.error('llm-chat unhandled error:', e?.message || e, e?.stack || '');
+    return jsonResponse({ error: 'internal_error' }, 500);
+  }
 });
 
 // =====================================================================

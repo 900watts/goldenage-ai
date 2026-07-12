@@ -2085,6 +2085,15 @@ async function wizardFinish(root, isZh, skip) {
     setup_complete: w.step >= 2 || skip ? true : (state.profile && state.profile.setup_complete) || false,
   };
   await saveProfile(u, payload, payload.setup_complete, isZh, skip);
+  // Establish the LIVE guardians link so the guardian's SOS alert actually
+  // fires. The wizard used to only store profile.guardian_account_id, which
+  // RLS ignores — so the guardian's crisis_events read returned 0 rows and
+  // the emergency popup never appeared. link_my_guardian() writes the real
+  // guardians row (elder = me, guardian = the entered Account ID).
+  if (w.data.guardian_account_id) {
+    try { await sb.rpc('link_my_guardian', { p_guardian: w.data.guardian_account_id }); }
+    catch (_) { /* non-fatal; the profile field above is a harmless fallback */ }
+  }
   renderAuth._wizard = null;
 }
 
@@ -2438,16 +2447,30 @@ async function triggerSos(askConfirm = true) {
 
   if (sbReady()) {
     try {
-      await sb.from('crisis_events').insert({
-        user_id: sbUser.id,
-        kind: 'sos_button',
-        payload
-      });
+      const { data: insRow, error: insErr } = await sb.from('crisis_events')
+        .insert({ user_id: sbUser.id, kind: 'sos_button', payload })
+        .select('id')
+        .single();
       // Clear this pending record on success.
       try {
         const q = JSON.parse(localStorage.getItem('pending_sos') || '[]');
         localStorage.setItem('pending_sos', JSON.stringify(q.filter(x => x.at !== rec.at)));
       } catch (_) {}
+      // Best-effort: dispatch SMS/push to every linked guardian via the
+      // notify-guardian Edge Function so they react even if their app is
+      // closed. Fails silently when Twilio/FCM aren't configured — the
+      // guardian app's realtime + 5s poll remain the primary path.
+      if (insRow && insRow.id && sb.functions && sb.functions.invoke) {
+        sb.functions.invoke('notify-guardian', {
+          body: {
+            crisis_id: insRow.id,
+            user_id: sbUser.id,
+            kind: 'sos_button',
+            latitude: payload.location ? payload.location.lat : null,
+            longitude: payload.location ? payload.location.lng : null,
+          }
+        }).catch(() => {});
+      }
     } catch (e) { console.warn('Crisis log failed:', e); }
   }
 }

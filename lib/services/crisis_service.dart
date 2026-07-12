@@ -32,6 +32,7 @@ enum CrisisKind {
 class CrisisEvent {
   const CrisisEvent({
     required this.id,
+    required this.elderId,
     required this.kind,
     this.latitude,
     this.longitude,
@@ -39,6 +40,7 @@ class CrisisEvent {
     required this.guardianNotified,
   });
   final String id;
+  final String elderId;
   final CrisisKind kind;
   final double? latitude;
   final double? longitude;
@@ -47,6 +49,7 @@ class CrisisEvent {
 
   factory CrisisEvent.fromMap(Map<String, dynamic> m) => CrisisEvent(
         id: m['id'] as String,
+        elderId: m['user_id'] as String,
         kind: CrisisKind.values.firstWhere(
           (e) => e.value == m['kind'],
           orElse: () => CrisisKind.manualAlert,

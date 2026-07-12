@@ -4,7 +4,8 @@
 // Implements the secure family-pairing flow:
 //
 // 1. Elder calls [createPairInvite] → server returns an encrypted
-//    `pair_token` (32 hex chars). Encoded into a QR code by the UI.
+//    `pair_token` (32 hex chars). Shown as a personalized pairing ID
+//    by the UI for the family member to type in.
 //
 // 2. Guardian (already authenticated) calls [acceptPairInvite] with
 //    the token. Server flips `pair_accepted = true`.
@@ -49,7 +50,7 @@ class GuardianService {
 
   static SupabaseClient get _client => SupabaseService.instance;
 
-  /// Elder side: create an invite token (printed as QR).
+  /// Elder side: create an invite token (shown as a personalized pairing ID).
   static Future<GuardianLink> createPairInvite({
     required String guardianUserId,
     String role = 'secondary',
@@ -119,6 +120,70 @@ class GuardianService {
             // UI layer subscribes via Provider; this is the raw event.
             // ignore: avoid_print
             print('Guardian realtime: ${payload.eventType} ${payload.newRecord}');
+          },
+        )
+        .subscribe();
+  }
+
+  /// Guardian side: list the elders this user is guarding (the inverse of
+  /// [myGuardians], which lists the elders of the *current* user). This is
+  /// what powers the management app's live emergency alerts.
+  static Future<List<GuardianLink>> myElders() async {
+    final me = _client.auth.currentUser?.id;
+    if (me == null) return [];
+    final res = await _client
+        .from('guardians')
+        .select(
+            'id, elder_id, pair_token, pair_accepted, profiles!guardians_elder_id_fkey(display_name)')
+        .eq('guardian_id', me)
+        .isFilter('revoked_at', null);
+    return (res as List).map((e) => GuardianLink.fromMap(e)).toList();
+  }
+
+  /// Guardian side: unresolved crises for a watched elder.
+  static Future<List<CrisisEvent>> unresolvedCrises(String elderId) async {
+    final res = await _client
+        .from('crisis_events')
+        .select()
+        .eq('user_id', elderId)
+        .isFilter('resolved_at', null)
+        .order('created_at', ascending: false);
+    return (res as List).map((e) => CrisisEvent.fromMap(e)).toList();
+  }
+
+  /// Guardian side: realtime subscription to a watched elder's `crisis_events`.
+  /// [onCrisis] fires with the new [CrisisEvent] on insert/update, or `null`
+  /// when an event is resolved/removed so the UI can clear it.
+  static RealtimeChannel watchCrises(
+    String elderId,
+    void Function(CrisisEvent?) onCrisis,
+  ) {
+    return _client
+        .channel('crisis:$elderId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'crisis_events',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'user_id',
+            value: elderId,
+          ),
+          callback: (payload) {
+            final m = payload.newRecord;
+            if (m == null || m.isEmpty) {
+              onCrisis(null);
+              return;
+            }
+            if (m['resolved_at'] != null) {
+              onCrisis(null);
+            } else {
+              try {
+                onCrisis(CrisisEvent.fromMap(m));
+              } catch (_) {
+                onCrisis(null);
+              }
+            }
           },
         )
         .subscribe();

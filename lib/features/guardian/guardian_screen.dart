@@ -2,15 +2,17 @@
 // GoldenAge AI — Guardian Screen
 // =====================================================================
 // Senior-friendly family pairing. The elder sees their list of linked
-// guardians; a new invite generates a QR code (or short code) for the
-// family member to scan with the same app.
+// guardians; a new invite generates a personalized pairing ID that the
+// family member types into the same app to pair.
 // =====================================================================
 
 import 'package:flutter/material.dart';
-import 'package:qr_flutter/qr_flutter.dart';
+import 'package:flutter/services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/colors.dart';
 import '../../core/l10n_ext.dart';
+import '../../services/crisis_service.dart';
 import '../../services/guardian_service.dart';
 import '../../services/supabase_service.dart';
 import '../../widgets/big_button.dart';
@@ -24,6 +26,9 @@ class GuardianScreen extends StatefulWidget {
 
 class _GuardianScreenState extends State<GuardianScreen> {
   List<GuardianLink> _guardians = [];
+  List<CrisisEvent> _crises = [];
+  final Map<String, String> _elderNames = {};
+  final List<RealtimeChannel> _crisisChannels = [];
   bool _loading = true;
   String? _error;
 
@@ -33,14 +38,35 @@ class _GuardianScreenState extends State<GuardianScreen> {
     _load();
   }
 
+  @override
+  void dispose() {
+    for (final c in _crisisChannels) c.unsubscribe();
+    super.dispose();
+  }
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
       _error = null;
     });
+    // Tear down any previous crisis channels before re-subscribing.
+    for (final c in _crisisChannels) c.unsubscribe();
+    _crisisChannels.clear();
+    _crises.clear();
+    _elderNames.clear();
     try {
       if (SupabaseService.isConfigured) {
         _guardians = await GuardianService.myGuardians();
+        // Guardian side: watch every elder this user guards for live SOS.
+        final elders = await GuardianService.myElders();
+        for (final e in elders) {
+          _elderNames[e.elderId] = e.elderName;
+          _crises.addAll(await GuardianService.unresolvedCrises(e.elderId));
+          _crisisChannels.add(
+            GuardianService.watchCrises(e.elderId, (_) => _reloadCrises()),
+          );
+        }
+        _crises.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       } else {
         _guardians = _devFixture();
       }
@@ -49,6 +75,31 @@ class _GuardianScreenState extends State<GuardianScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  /// Re-pull unresolved crises across all watched elders (called on every
+  /// realtime change so the banner stays live without a manual refresh).
+  Future<void> _reloadCrises() async {
+    if (!SupabaseService.isConfigured) return;
+    try {
+      final elders = await GuardianService.myElders();
+      final all = <CrisisEvent>[];
+      for (final e in elders) {
+        _elderNames[e.elderId] = e.elderName;
+        all.addAll(await GuardianService.unresolvedCrises(e.elderId));
+      }
+      all.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      if (mounted) setState(() => _crises = all);
+    } catch (_) {
+      // non-fatal
+    }
+  }
+
+  Future<void> _resolveCrisis(String id) async {
+    try {
+      await CrisisService.resolve(id);
+      await _reloadCrises();
+    } catch (_) {}
   }
 
   Future<void> _createInvite() async {
@@ -90,13 +141,32 @@ class _GuardianScreenState extends State<GuardianScreen> {
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('配对邀请已创建'),
-          content: SizedBox(
-            width: 220,
-            child: QrImageView(
-              data: 'goldenage://pair/${link.pairToken}',
-              version: QrVersions.auto,
-              size: 200,
-            ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('把这个专属配对 ID 发给您的家人，让对方在同一个应用里输入即可与您配对。'),
+              const SizedBox(height: 16),
+              SelectableText(
+                link.pairToken,
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 2,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextButton.icon(
+                icon: const Icon(Icons.copy),
+                label: const Text('复制 ID'),
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: link.pairToken));
+                  ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+                    content: Text('专属配对 ID 已复制'),
+                    behavior: SnackBarBehavior.floating,
+                  ));
+                },
+              ),
+            ],
           ),
           actions: [
             TextButton(
@@ -141,6 +211,48 @@ class _GuardianScreenState extends State<GuardianScreen> {
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
+          if (_crises.isNotEmpty)
+            Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.danger,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('🚨 紧急求助！',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  ..._crises.map(
+                    (c) => Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              _elderNames[c.elderId]?.isNotEmpty == true
+                                  ? _elderNames[c.elderId]!
+                                  : '您的长辈',
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () => _resolveCrisis(c.id),
+                            child: const Text('✓ 已响应',
+                                style: TextStyle(color: Colors.white)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           Text(l.guardianTitle, style: theme.textTheme.headlineSmall),
           const SizedBox(height: 8),
           Text(l.guardianAskHowIsMom, style: theme.textTheme.bodyLarge),
@@ -159,7 +271,7 @@ class _GuardianScreenState extends State<GuardianScreen> {
                 const SizedBox(height: 20),
                 BigButton(
                   label: l.guardianShowQr,
-                  icon: Icons.qr_code_2,
+                  icon: Icons.badge,
                   onPressed: _createInvite,
                 ),
               ],
@@ -180,7 +292,7 @@ class _GuardianScreenState extends State<GuardianScreen> {
           const SizedBox(height: 20),
           BigButton(
             label: l.guardianShowQr,
-            icon: Icons.qr_code_2,
+            icon: Icons.badge,
             style: BigButtonStyle.ghost,
             onPressed: _createInvite,
           ),

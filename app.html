@@ -9,7 +9,7 @@
 <link rel="apple-touch-icon" sizes="180x180" href="assets/icon/apple-touch-icon-180.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800&family=Source+Sans+3:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800&family=Source+Sans+3:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Color+Emoji&display=swap" rel="stylesheet">
 <style>
 :root{
   /* === Brand (kept as hex so JS inline styles stay stable) === */
@@ -77,7 +77,7 @@ html.elderly-mode .tile-title{letter-spacing:.01em}
 html,body{height:100%;width:100%}
 html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
 body{
-  font-family:'Noto Sans SC','Source Sans 3',system-ui,sans-serif;
+  font-family:'Noto Sans SC','Source Sans 3',system-ui,'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji',sans-serif;
   background:var(--bg-app);
   color:var(--text-app);
   line-height:1.6;
@@ -87,7 +87,7 @@ body{
   overflow-x:hidden;
   transition:background .3s,color .3s;
 }
-body[data-lang="en"]{font-family:'Source Sans 3',system-ui,sans-serif}
+body[data-lang="en"]{font-family:'Source Sans 3',system-ui,'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji',sans-serif}
 h1,h2,h3,h4,h5{font-family:'Lexend','Noto Sans SC',sans-serif;line-height:1.2;color:var(--text-app)}
 
 /* shadcn-style focus ring: a crisp outline that appears only for keyboard users.
@@ -661,6 +661,18 @@ label.field-label{display:block;font-weight:600;margin-bottom:8px;font-size:1rem
 @media(min-width:1000px){.auto-grid{grid-template-columns:repeat(2,1fr);gap:18px}}
 @media(min-width:1300px){.auto-grid{grid-template-columns:repeat(3,1fr)}}
 
+/* === SECTION ICON (inline SVG) === */
+.section-icon{display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;color:var(--primary)}
+.section-icon.fire{color:#EA580C}
+.section-icon.star{color:#F59E0B}
+.section-icon.robot{color:var(--primary)}
+.section-icon svg{width:1.2em;height:1.2em;display:block}
+h3 .section-icon{margin-right:6px}
+
+/* AI button with inline-SVG robot icon (instead of 🤖 emoji) */
+.quote-ai .ai-icon{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;background:rgba(255,255,255,.25);border-radius:6px;margin-right:4px;vertical-align:middle}
+.quote-ai .ai-icon svg{width:12px;height:12px;display:block}
+
 /* PC split: two panes side by side */
 .pc-split{display:grid;grid-template-columns:1fr;gap:16px}
 @media(min-width:1000px){.pc-split{grid-template-columns:1fr 1fr;align-items:start}}
@@ -744,26 +756,21 @@ label.field-label{display:block;font-weight:600;margin-bottom:8px;font-size:1rem
     </div>
 
     <div class="nav-section" data-i18n="navSectionMain">主要功能</div>
-    <button class="nav-item active" data-route="home">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l9-9 9 9M5 10v10h14V10"/></svg>
+    <button class="nav-item" data-route=""><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l9-9 9 9M5 10v10h14V10"/></svg>
       <span data-i18n="navHome">首页</span>
     </button>
-    <button class="nav-item" data-route="features">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    <button class="nav-item" data-route=""><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
       <span data-i18n="navFeatures">功能</span>
     </button>
-    <button class="nav-item" data-route="map">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+    <button class="nav-item" data-route=""><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
       <span data-i18n="navMap">地图</span>
     </button>
 
     <div class="nav-section" data-i18n="navSectionFamily">家庭</div>
-    <button class="nav-item" data-route="guardian">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+    <button class="nav-item" data-route=""><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
       <span data-i18n="guardTitle">守护者</span>
     </button>
-    <button class="nav-item" data-route="me">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+    <button class="nav-item" data-route=""><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
       <span data-i18n="navMe">我的</span>
     </button>
 
@@ -794,20 +801,16 @@ label.field-label{display:block;font-weight:600;margin-bottom:8px;font-size:1rem
     </div>
     <div class="screen" id="screen"></div>
     <nav class="bottom-nav" id="bottomNav">
-      <button class="nav-item active" data-route="home">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l9-9 9 9M5 10v10h14V10"/></svg>
+      <button class="nav-item" data-route=""><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l9-9 9 9M5 10v10h14V10"/></svg>
         <span data-i18n="navHome">首页</span>
       </button>
-      <button class="nav-item" data-route="features">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <button class="nav-item" data-route=""><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
         <span data-i18n="navFeatures">功能</span>
       </button>
-      <button class="nav-item" data-route="map">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+      <button class="nav-item" data-route=""><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
         <span data-i18n="navMap">地图</span>
       </button>
-      <button class="nav-item" data-route="me">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      <button class="nav-item" data-route=""><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         <span data-i18n="navMe">我的</span>
       </button>
     </nav>

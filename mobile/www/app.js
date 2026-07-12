@@ -533,6 +533,18 @@ const ICON = {
   sos: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.13.96.36 1.9.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0122 16.92z"/></svg>',
   lang: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 010 20M12 2a15 15 0 000 20"/></svg>',
   theme: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>',
+  // Inline SVG replacements for emojis that may not render in browsers
+  // without an emoji font (Windows / Linux / older Chrome). The app
+  // already embeds 'Noto Color Emoji' as a web font, but if that's also
+  // missing these SVGs always render.
+  star: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.9L22 10l-5.5 4.8L18 22l-6-3.6L6 22l1.5-7.2L2 10l7.1-1.1L12 2z"/></svg>',
+  fire: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13.5 0.7c0 4 -3 4 -3 8 c0 2 1 3 1 5 c-2 -1 -3 -3 -3 -5 c-1 1 -2 3 -2 5 c0 4 3 7 7 7 c4 0 7 -3 7 -7 C20 8 16 5 13.5 0.7 z"/></svg>',
+  robot: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="7" width="16" height="12" rx="2"/><circle cx="9" cy="13" r="1.2"/><circle cx="15" cy="13" r="1.2"/><path d="M12 7V4M9 4h6"/><path d="M2 13v2M22 13v2"/></svg>',
+  alarm: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M5 3L2 6M22 6l-3-3M6 19l-2 2M18 19l2 2"/></svg>',
+  speaker: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg>',
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>',
+  plus:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>',
 };
 
 // ---------------- DATA ----------------
@@ -2344,7 +2356,7 @@ function quoteCardHTML(q, opts = {}) {
         <button class="big-btn ghost quote-watch" data-watch="${escapeAttr(q.id)}" style="width:auto;min-width:0;font-size:.85rem;padding:8px 12px">${watchLabel}</button>
       </div>
       ${opts.showSpark ? '<canvas class="quote-spark" data-spark="' + escapeAttr(q.id) + '" width="120" height="36" style="width:100%;height:36px;display:block;margin-top:8px"></canvas>' : ''}
-      <button class="big-btn ghost quote-ai" data-explain="${escapeAttr(q.id)}" data-pct="${q.pct || 0}" data-up="${up}" data-name="${escapeAttr(q.name[state.lang] || q.id)}" data-currency="${escapeAttr(q.currency || q.unit || '')}" style="margin-top:8px;width:100%;font-size:.9rem;padding:10px 14px">🤖 ${t('finAskAi')}</button>
+      <button class="big-btn ghost quote-ai" data-explain="${escapeAttr(q.id)}" data-pct="${q.pct || 0}" data-up="${up}" data-name="${escapeAttr(q.name[state.lang] || q.id)}" data-currency="${escapeAttr(q.currency || q.unit || '')}" style="margin-top:8px;width:100%;font-size:.9rem;padding:10px 14px"><span class="ai-icon">${ICON.robot}</span>${t('finAskAi')}</button>
     </div>`;
 }
 
@@ -2393,7 +2405,7 @@ function renderFinance(root) {
 
     <!-- Watchlist -->
     <h3 style="font-size:1.05rem;margin:0 0 8px;display:flex;align-items:center;gap:8px">
-      ⭐ ${t('finWatch')}
+      <span class="section-icon star">${ICON.star}</span>${t('finWatch')}
       <span style="color:var(--muted);font-weight:500;font-size:.85rem">(${watched.length})</span>
     </h3>
     <div class="auto-grid" id="finWatchGrid">
@@ -2403,7 +2415,9 @@ function renderFinance(root) {
     </div>
 
     <!-- Hero: most-followed commodities + indices -->
-    <h3 style="font-size:1.05rem;margin:24px 0 8px">🔥 ${t('finHot')}</h3>
+    <h3 style="font-size:1.05rem;margin:24px 0 8px;display:flex;align-items:center;gap:8px">
+      <span class="section-icon fire">${ICON.fire}</span>${t('finHot')}
+    </h3>
     <div class="auto-grid" id="finHeroGrid">
       ${window.LiveData.FINANCE_SYMBOLS.filter(s => s.hero).map(s => `
         <div class="card">
@@ -2416,7 +2430,9 @@ function renderFinance(root) {
     </div>
 
     <!-- Full grid (everything else) -->
-    <h3 style="font-size:1.05rem;margin:24px 0 8px">${t('finExplore')}</h3>
+    <h3 style="font-size:1.05rem;margin:24px 0 8px;display:flex;align-items:center;gap:8px">
+      <span class="section-icon">${ICON.search}</span>${t('finExplore')}
+    </h3>
     <div class="auto-grid" id="finGrid">
       ${window.LiveData.FINANCE_SYMBOLS.filter(s => !s.hero).map(s => `
         <div class="card">
@@ -2464,7 +2480,7 @@ function renderFinance(root) {
           </div>
           <div style="display:flex;gap:8px;margin-top:10px">
             <button class="big-btn primary" id="finSearchAdd" style="flex:1;font-size:.95rem;padding:10px 14px">${watched ? t('finInWatch') : t('finAddWatch')}</button>
-            <button class="big-btn ghost fin-ai" data-explain="${escapeAttr(r.id)}" data-pct="${r.pct||0}" data-up="${(r.change||0)>=0}" data-name="${escapeAttr(r.name[state.lang] || r.id)}" data-currency="${escapeAttr(r.currency || r.unit || '')}" style="flex:1;font-size:.95rem;padding:10px 14px">🤖 ${t('finAskAi')}</button>
+            <button class="big-btn ghost fin-ai" data-explain="${escapeAttr(r.id)}" data-pct="${r.pct||0}" data-up="${(r.change||0)>=0}" data-name="${escapeAttr(r.name[state.lang] || r.id)}" data-currency="${escapeAttr(r.currency || r.unit || '')}" style="flex:1;font-size:.95rem;padding:10px 14px"><span class="ai-icon">${ICON.robot}</span>${t('finAskAi')}</button>
           </div>
         </div>`;
       const add = document.getElementById('finSearchAdd');
@@ -2602,7 +2618,7 @@ async function askAiAboutQuote(btn) {
   const orig = btn.innerHTML;
   btn.disabled = true;
   btn.style.opacity = '0.6';
-  btn.innerHTML = '🤖 ' + (isZh ? '解读中…' : 'Analyzing…');
+  btn.innerHTML = '<span class="ai-icon">' + ICON.robot + '</span>' + (isZh ? '解读中…' : 'Analyzing…');
   // If we have a real LLM connection, use it; otherwise fall back to a heuristic sentence.
   let text = null;
   try {
@@ -2636,7 +2652,7 @@ async function askAiAboutQuote(btn) {
   const dlg = document.getElementById('dialog');
   dlg.innerHTML = `
     <div style="text-align:center;padding-top:4px">
-      <div style="font-size:2.2rem;margin-bottom:6px">🤖</div>
+      <div style="width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--cta));color:#fff;display:flex;align-items:center;justify-content:center;margin:0 auto 10px">${ICON.robot}</div>
       <h3 style="margin:0 0 4px;font-size:1.25rem">${escapeHtml(name)}</h3>
       <p class="text-soft" style="font-size:.9rem;margin:0 0 14px">${escapeHtml(id)} · ${pctTxt}</p>
     </div>
@@ -2921,9 +2937,9 @@ function renderVerdict(r) {
   const vLabel = v === 'safe' ? t('scamSafe') : v === 'caution' ? t('scamCaution') : t('scamDanger');
   const icon = v === 'safe' ? ICON.check : ICON.warn;
   const sourceBadge = r._source === 'llm' || r._source === 'llm-raw'
-    ? `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;background:linear-gradient(135deg,var(--primary),var(--cta));color:#fff;font-size:.7rem;font-weight:600;letter-spacing:.5px">🤖 AI</span>`
+    ? `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;background:linear-gradient(135deg,var(--primary),var(--cta));color:#fff;font-size:.7rem;font-weight:600;letter-spacing:.5px"><span style="display:inline-flex;align-items:center;width:12px;height:12px">${ICON.robot}</span>AI</span>`
     : (r._source === 'rules'
-        ? `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;background:var(--bg);color:var(--muted);border:1px solid var(--border-app);font-size:.7rem;font-weight:600">📋 ${state.lang==='zh'?'规则':'Rules'}</span>`
+        ? `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;background:var(--bg);color:var(--muted);border:1px solid var(--border-app);font-size:.7rem;font-weight:600">${state.lang==='zh'?'规则':'Rules'}</span>`
         : '');
   return `
     <div class="verdict-card ${v}">

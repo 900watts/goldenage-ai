@@ -219,13 +219,13 @@ async function fetchStock(ticker) {
   try {
     const sess = await window.sb?.auth?.getSession?.();
     if (!sess?.data?.session) {
-      return { id: t, name: { zh: t, en: t }, price: null, change: null, pct: null, _universe: 'external', _error: 'auth' };
+      return { id: ticker, name: { zh: ticker, en: ticker }, price: null, change: null, pct: null, _universe: 'external', _error: 'auth' };
     }
     const accessToken = sess.data.session.access_token;
     const r = await fetch(SB_URL + '/functions/v1/stock-lookup', {
       method: 'POST',
       headers: { 'apikey': window.sb.supabaseKey || '', 'authorization': 'Bearer ' + accessToken, 'content-type': 'application/json' },
-      body: JSON.stringify({ ticker: t })
+      body: JSON.stringify({ ticker: ticker })
     });
     if (!r.ok) {
       return { id: t, name: { zh: t, en: t }, price: null, change: null, pct: null, _universe: 'external' };
@@ -249,7 +249,7 @@ async function fetchStock(ticker) {
       _exchange: d.exchange
     };
   } catch (_) {
-    return { id: t, name: { zh: t, en: t }, price: null, change: null, pct: null, _universe: 'external' };
+    return { id: ticker, name: { zh: ticker, en: ticker }, price: null, change: null, pct: null, _universe: 'external' };
   }
 }
 

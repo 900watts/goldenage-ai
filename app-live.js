@@ -860,7 +860,15 @@ async function llmChat(messages, opts = {}) {
       usage: body.usage,
       credits_remaining: body.credits_remaining,
       credits_total:     body.credits_total,
-      reset_at:          body.reset_at
+      reset_at:          body.reset_at,
+      // Forwarded so callers (e.g. refineMyAgent) can read the refined soul
+      // and auto-config metadata without digging into raw.
+      soul_md: body.soul_md,
+      soul_refined: !!body.soul_refined,
+      summary: body.summary,
+      agent: body.agent,
+      auto_memories: body.auto_memories,
+      memories_used: body.memories_used
     };
   } catch (e) {
     return { error: (e && e.message) || String(e) };

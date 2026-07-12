@@ -964,6 +964,7 @@ window.LiveData = {
   fetchQuotes,
   fetchStock,
   findSymbol,
+  findCompanyName,
   fetchDailyDigest,
   fetchPOIs,
   fetchStaticMapUrl,

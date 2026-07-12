@@ -2046,17 +2046,42 @@ function startResendTimer(kind) {
   }, 1000);
 }
 
+// Returns the current user's display name, falling back gracefully.
+function getDisplayName() {
+  const p = state.profile || {};
+  const fromProfile = p.display_name || p.preferred_name || '';
+  if (fromProfile) return fromProfile;
+  const email = sbUser && sbUser.email ? sbUser.email.split('@')[0] : '';
+  if (email) return email;
+  const phone = sbUser && sbUser.phone ? sbUser.phone : '';
+  if (phone) return phone;
+  return state.lang === 'zh' ? '朋友' : 'friend';
+}
+
 // --- HOME ---
-function renderHome(root) {
+async function renderHome(root) {
+  // Make sure the profile (which holds the display name) is loaded before we
+  // paint the greeting. finishSignIn only peeked at setup_complete and never
+  // stored the profile, so it may still be null here.
+  if (sbReady() && !state.profile) {
+    try {
+      const { data } = await sb.from('profiles')
+        .select('display_name, preferred_name, gender, age, city, birth_date, news_topics, guardian_name, guardian_relationship, guardian_phone, setup_complete, elder_account_id, guardian_account_id, pairing_code')
+        .eq('id', sbUser.id)
+        .maybeSingle();
+      if (data) state.profile = data;
+    } catch (_) { /* name fallback handles it */ }
+  }
   const h = new Date().getHours();
   const greet = h < 12 ? t('greetingMorning') : h < 18 ? t('greetingAfternoon') : t('greetingEvening');
+  const userName = getDisplayName();
   root.innerHTML = `
     <div class="dash">
       <!-- Left: greeting + SOS -->
       <div>
         <div class="hero">
           <div class="hero-eyebrow">${state.lang==='zh'?'欢迎回来':'Welcome back'}</div>
-          <div class="hero-title">${greet}，${t('meName')}</div>
+          <div class="hero-title">${greet}，${escapeHtml(userName)}</div>
           <div class="hero-sub">${state.lang==='zh'?'今天也要好好照顾自己':'Take good care of yourself today'}</div>
         </div>
         <button class="sos-btn" id="sosBtn">

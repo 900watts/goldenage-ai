@@ -50,6 +50,7 @@ const I18N = {
     medTitle: '用药管理', medTaken: '已服药', medSkip: '跳过', medAdd: '添加提醒',
     medTake1: '降压药', medTake1Sub: '08:00 · 20:00 · 饭后服用',
     medTake2: '钙片', medTake2Sub: '12:00 · 随午餐',
+    remTitle: '提醒', remSub: 'AI 帮您记住重要的事情', remAdd: '+ 添加提醒', remUpcoming: '即将到期', remHistory: '历史', remEmpty: '还没有提醒。让 AI 帮您添加一个吧。', remCancel: '取消', remHint: '试试说："提醒我两小时后吃阿司匹林"或"每天早上8点提醒我量血压"', remFired: '已触发', remCancelled: '已取消', remSnooze: '⏰ 5分钟后再说', remGot: '知道了 ✓', remTime: '原定时间', remSnoozed: '已延后 5 分钟',
     meTitle: '我的', meName: '', meEmergency: '', meNoEmergency: '未设置紧急联系人',
     meLang: '语言', meAccess: '无障碍设置', meBigText: '大字模式', meDark: '深色模式',
     meAi: 'AI 助手设置', meAiProvider: '服务', meAiKey: 'API Key', meAiKeyPh: '在此粘贴您的 API Key', meAiSave: '保存', meAiClear: '清除', meAiStatus: '状态', meAiStatusOff: '未配置', meAiStatusOn: '已配置', meAiNote: 'API Key 仅保存在您的浏览器中（localStorage），不会上传到任何服务器。',
@@ -140,6 +141,7 @@ const I18N = {
     medTitle: 'Medication', medTaken: 'Taken', medSkip: 'Skip', medAdd: 'Add Reminder',
     medTake1: 'Blood Pressure Meds', medTake1Sub: '08:00 · 20:00 · with food',
     medTake2: 'Calcium', medTake2Sub: '12:00 · with lunch',
+    remTitle: 'Reminders', remSub: 'Let the AI remember things for you', remAdd: '+ Add reminder', remUpcoming: 'Upcoming', remHistory: 'History', remEmpty: 'No reminders yet. Ask the AI to set one for you.', remCancel: 'Cancel', remHint: 'Try: "remind me to take aspirin in 2 hours" or "remind me every day at 8am to check my blood pressure"', remFired: 'Fired', remCancelled: 'Cancelled', remSnooze: '⏰ Snooze 5m', remGot: 'Got it ✓', remTime: 'Scheduled for', remSnoozed: 'Snoozed 5 minutes',
     meTitle: 'Profile', meName: '', meEmergency: '', meNoEmergency: 'No emergency contact set',
     meLang: 'Language', meAccess: 'Accessibility', meBigText: 'Big Text Mode', meDark: 'Dark Mode',
     meAi: 'AI Assistant Settings', meAiProvider: 'Provider', meAiKey: 'API Key', meAiKeyPh: 'Paste your API key here', meAiSave: 'Save', meAiClear: 'Clear', meAiStatus: 'Status', meAiStatusOff: 'Not configured', meAiStatusOn: 'Configured', meAiNote: 'API key is stored in your browser (localStorage) only and never sent to any server except the AI provider itself.',
@@ -250,7 +252,46 @@ const APP_TOOLS = [
   { type: 'function', function: { name: 'open_medication',    description: 'Open the medication reminder page.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'open_guardian',      description: 'Open the guardian pairing/management page.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'open_me',            description: 'Open the profile/settings page (Me tab).', parameters: { type: 'object', properties: {} } } },
-  { type: 'function', function: { name: 'open_home',          description: 'Go to the home tab.', parameters: { type: 'object', properties: {} } } }
+  { type: 'function', function: { name: 'open_home',          description: 'Go to the home tab.', parameters: { type: 'object', properties: {} } } },
+  {
+    type: 'function',
+    function: {
+      name: 'set_reminder',
+      description: 'Create a reminder for the user. Use this whenever the user asks to be reminded of something in the future, e.g. "remind me to take aspirin in 2 hours", "remind me to call my daughter at 8pm tonight", "remind me every day at 8am to take my pills". For "in 2 hours" / "at 8pm tonight" style requests, compute the future ISO timestamp in the user\'s local timezone and pass it as fire_at_iso. For "every day at HH:MM" style requests, pass time_of_day as "HH:MM" and repeat as "daily".',
+      parameters: {
+        type: 'object',
+        properties: {
+          label: { type: 'string', description: 'What to remind the user about (e.g. "服用阿司匹林" or "Call daughter")' },
+          fire_at_iso: { type: 'string', description: 'ISO 8601 timestamp in UTC for one-off reminders (e.g. "2026-07-12T15:30:00Z"). Required for one_off.' },
+          time_of_day: { type: 'string', description: 'HH:MM (24h, user-local time) for daily reminders. Required for daily.' },
+          repeat: { type: 'string', enum: ['once', 'daily'], description: '"once" for one-off reminder, "daily" for recurring daily reminder. Default: once.' }
+        },
+        required: ['label']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'cancel_reminder',
+      description: 'Cancel a previously created reminder by its id.',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'The reminder id returned from set_reminder (UUID).' }
+        },
+        required: ['id']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_reminders',
+      description: 'List the user\'s upcoming reminders. Use this when the user asks "what reminders do I have?" or "what\'s next?".',
+      parameters: { type: 'object', properties: {} }
+    }
+  }
 ];
 
 // Quick navigation aliases for the LLM (so it can map natural-language
@@ -824,6 +865,41 @@ async function aiChat(userText) {
           } else if (name === 'open_me') {
             toolLabel = '⚙️ 我的';
             setTimeout(() => { try { go('me'); } catch(_) {} }, 300);
+          } else if (name === 'set_reminder') {
+            // Already executed server-side; find the matching tool_result
+            // (same index in r.tool_results) and surface it.
+            const res = (r.tool_results || []).find(x => x && x.name === 'set_reminder' && JSON.stringify(x.args) === JSON.stringify(args));
+            const rem = res && res.result && res.result.reminder;
+            if (res && res.result && res.result.ok && rem) {
+              toolLabel = state.lang==='zh' ? '⏰ 已设置提醒' : '⏰ Reminder set';
+              // Speak + toast a confirmation.
+              const when = rem.kind === 'daily'
+                ? (state.lang==='zh' ? `每天 ${rem.time_of_day}` : `every day at ${rem.time_of_day}`)
+                : new Date(rem.next_fire_at).toLocaleString(state.lang==='zh' ? 'zh-CN' : 'en-US', { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' });
+              const speech = state.lang==='zh'
+                ? `好的，已为您设置提醒：${rem.label}，${when}。`
+                : `Got it. I set a reminder: ${rem.label}, ${when}.`;
+              toast(speech);
+              setTimeout(() => speak(speech), 400);
+              // Open the Reminders tab so the user sees their new entry.
+              setTimeout(() => { try { go('reminders'); } catch(_) {} }, 800);
+            } else if (res && res.result && res.result.error) {
+              toolLabel = state.lang==='zh' ? '⚠️ 提醒设置失败' : '⚠️ Reminder failed';
+              toast((state.lang==='zh'?'设置提醒出错：':'Failed to set reminder: ') + res.result.error, true);
+            }
+          } else if (name === 'cancel_reminder') {
+            const res = (r.tool_results || []).find(x => x && x.name === 'cancel_reminder' && JSON.stringify(x.args) === JSON.stringify(args));
+            if (res && res.result && res.result.ok) {
+              toolLabel = state.lang==='zh' ? '🗑️ 已取消提醒' : '🗑️ Reminder cancelled';
+              toast(state.lang==='zh' ? '提醒已取消' : 'Reminder cancelled');
+            } else {
+              toolLabel = state.lang==='zh' ? '⚠️ 取消失败' : '⚠️ Cancel failed';
+            }
+          } else if (name === 'list_reminders') {
+            // After the model returns the list, open the Reminders tab
+            // so the user sees the rendered table.
+            toolLabel = state.lang==='zh' ? '📋 提醒列表' : '📋 Reminders';
+            setTimeout(() => { try { go('reminders'); } catch(_) {} }, 300);
           }
         }
         return { reply: (r.text || '').trim(), tool: toolLabel };
@@ -1056,6 +1132,7 @@ function render() {
     case 'scam': return renderScam(screen);
     case 'guardian': return renderGuardian(screen);
     case 'medication': return renderMedication(screen);
+    case 'reminders': return renderReminders(screen);
   }
 }
 
@@ -1498,6 +1575,9 @@ async function finishSignIn(user, isZh, fresh = true) {
   // Only show the welcome toast on a real sign-in (not a token refresh).
   if (fresh) toast(isZh ? '登录成功，欢迎！' : 'Welcome!');
   applyState();
+  // Start the reminder scheduler so due reminders fire a pop-up +
+  // browser notification. Safe to call repeatedly — it's idempotent.
+  try { startReminderScheduler(); } catch (_) {}
 }
 
 // ---------------- SETUP WIZARD ----------------
@@ -2069,6 +2149,8 @@ function renderFeatures(root) {
   const tiles = [
     { route: 'medication', icon: ICON.pill,   grad: 'linear-gradient(135deg,var(--gold),#D97706)',
       title: () => t('navReminder'), sub: () => state.lang==='zh'?'服药、预约、提醒':'Medications, schedule, reminders' },
+    { route: 'reminders',  icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M5 3L2 6M22 6l-3-3M6 19l-2 2M18 19l2 2"/></svg>',  grad: 'linear-gradient(135deg,var(--cta),#B45309)',
+      title: () => t('remTitle'), sub: () => t('remSub') },
     { route: 'news',       icon: ICON.news,   grad: 'linear-gradient(135deg,var(--cta),var(--cta-dark))',
       title: () => t('navNews'), sub: () => state.lang==='zh'?'AI 摘要实时新闻':'AI-summarized live news' },
     { route: 'finance',    icon: ICON.gold,   grad: 'linear-gradient(135deg,var(--primary),var(--primary-dark))',
@@ -2821,6 +2903,259 @@ async function addMedication() {
   render();
 }
 
+// =====================================================================
+// REMINDERS  ─ user-set, AI-driven reminders
+// =====================================================================
+// A user can say "remind me to take aspirin in 2 hours" and the AI
+// emits a `set_reminder` tool call. The Edge Function writes the row
+// to public.reminders. This module:
+//   1. Renders the Reminders tab (list of upcoming / past reminders).
+//   2. Runs a 30-second polling scheduler that fires a modal + browser
+//      notification when a reminder's next_fire_at is reached.
+//   3. Exposes showReminderModal() for the AI bubble to also trigger.
+
+let reminderSchedulerTimer = null;
+let _lastRemindersCheck = 0;
+let _firedReminderIds = new Set();
+
+async function pollReminders() {
+  if (!sbReady() || !sbUser) return;
+  const now = Date.now();
+  if (now - _lastRemindersCheck < 10_000) return; // throttle
+  _lastRemindersCheck = now;
+  try {
+    // Find any scheduled reminder whose next_fire_at has arrived.
+    const { data, error } = await sb.from('reminders')
+      .select('id, label, kind, next_fire_at, time_of_day, fire_count, source')
+      .eq('user_id', sbUser.id)
+      .eq('status', 'scheduled')
+      .lte('next_fire_at', new Date().toISOString())
+      .order('next_fire_at', { ascending: true })
+      .limit(5);
+    if (error) { console.warn('pollReminders error:', error); return; }
+    for (const r of data || []) {
+      if (_firedReminderIds.has(r.id)) continue;
+      _firedReminderIds.add(r.id);
+      await fireReminder(r);
+    }
+  } catch (e) { console.warn('pollReminders failed:', e); }
+}
+
+async function fireReminder(r) {
+  // 1. Mark as fired in the DB (and reschedule daily for tomorrow).
+  const now = new Date();
+  const updates = { last_fired_at: now.toISOString(), fire_count: (r.fire_count || 0) + 1 };
+  if (r.kind === 'daily' && r.time_of_day) {
+    // Push next_fire_at to the same HH:MM tomorrow.
+    const [hh, mm] = r.time_of_day.split(':').map(s => parseInt(s, 10));
+    const next = new Date(now);
+    next.setDate(next.getDate() + 1);
+    next.setHours(hh, mm, 0, 0);
+    updates.next_fire_at = next.toISOString();
+    updates.status = 'scheduled';
+  } else {
+    updates.status = 'fired';
+  }
+  try {
+    await sb.from('reminders').update(updates).eq('id', r.id);
+  } catch (e) { console.warn('fireReminder update failed:', e); }
+
+  // 2. Browser notification (if permission granted).
+  try {
+    if (Notification && Notification.permission === 'granted') {
+      new Notification(state.lang==='zh' ? '⏰ 提醒' : '⏰ Reminder', {
+        body: r.label,
+        tag: 'reminder-' + r.id,
+        requireInteraction: true
+      });
+    }
+  } catch (_) {}
+
+  // 3. Speak + show the in-app modal.
+  const speech = state.lang==='zh' ? `提醒您：${r.label}` : `Reminder: ${r.label}`;
+  speak(speech);
+  showReminderModal(r);
+
+  // 4. If we're on the Reminders tab, re-render to show the new state.
+  if (state.route === 'reminders') render();
+}
+
+function showReminderModal(r) {
+  const isZh = state.lang === 'zh';
+  const mask = document.getElementById('dialogMask');
+  const dlg = document.getElementById('dialog');
+  // Friendly time-of-day header.
+  const fireDate = new Date(r.next_fire_at);
+  const timeStr = fireDate.toLocaleString(isZh ? 'zh-CN' : 'en-US', { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' });
+  dlg.innerHTML = `
+    <div style="text-align:center;padding-top:4px">
+      <div style="font-size:2.4rem;margin-bottom:8px">⏰</div>
+      <h3 style="margin:0 0 6px;font-size:1.4rem;color:var(--primary)">${isZh?'提醒时间到':'Reminder'}</h3>
+      <p style="font-size:1.15rem;line-height:1.5;margin:8px 0 16px;color:var(--text)"><strong>${escapeHtml(r.label)}</strong></p>
+      <p class="text-soft" style="font-size:.85rem;margin:0 0 20px">${isZh ? '原定时间' : 'Scheduled for'}: ${timeStr}</p>
+    </div>
+    <div class="actions" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <button class="big-btn ghost" id="remSnooze" style="min-width:0">${isZh?'⏰ 5分钟后再说':'⏰ Snooze 5m'}</button>
+      <button class="big-btn primary" id="remDismiss" style="min-width:0">${isZh?'知道了 ✓':'Got it ✓'}</button>
+    </div>`;
+  mask.classList.add('open');
+  document.getElementById('remDismiss').onclick = () => { mask.classList.remove('open'); _firedReminderIds.delete(r.id); };
+  document.getElementById('remSnooze').onclick = async () => {
+    mask.classList.remove('open');
+    // Snooze 5 minutes: push next_fire_at + 5min and put back to scheduled.
+    const snoozeAt = new Date(Date.now() + 5 * 60_000).toISOString();
+    try {
+      await sb.from('reminders').update({ next_fire_at: snoozeAt, status: 'scheduled' }).eq('id', r.id);
+    } catch (e) { console.warn('snooze update failed:', e); }
+    _firedReminderIds.delete(r.id);
+    if (state.route === 'reminders') render();
+    toast(isZh ? '已延后 5 分钟' : 'Snoozed 5 minutes');
+  };
+}
+
+function startReminderScheduler() {
+  if (reminderSchedulerTimer) return;
+  // Request notification permission lazily (silent fail if denied).
+  try {
+    if (Notification && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+  } catch (_) {}
+  pollReminders();
+  reminderSchedulerTimer = setInterval(pollReminders, 30_000);
+}
+
+function stopReminderScheduler() {
+  if (reminderSchedulerTimer) { clearInterval(reminderSchedulerTimer); reminderSchedulerTimer = null; }
+}
+
+async function renderReminders(root) {
+  const isZh = state.lang === 'zh';
+  let rows = [];
+  if (sbReady()) {
+    try {
+      const { data } = await sb.from('reminders')
+        .select('id, label, kind, next_fire_at, time_of_day, status, fire_count, source, last_fired_at, created_at')
+        .eq('user_id', sbUser.id)
+        .order('next_fire_at', { ascending: true });
+      if (data) rows = data;
+    } catch (e) { console.warn('renderReminders error:', e); }
+  }
+  const upcoming = rows.filter(r => r.status === 'scheduled');
+  const past = rows.filter(r => r.status !== 'scheduled');
+  const fmt = (iso) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return d.toLocaleString(isZh ? 'zh-CN' : 'en-US', { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' });
+  };
+  root.innerHTML = `
+    <h2 class="section-title">${isZh ? '提醒' : 'Reminders'}</h2>
+    <p class="text-soft" style="margin-bottom:20px">${isZh ? '让 AI 帮您记住重要的事情。试试对它说："提醒我两小时后吃阿司匹林"或"每天早上8点提醒我量血压"。' : 'Let the AI remember things for you. Try: "remind me to take aspirin in 2 hours" or "remind me every day at 8am to check my blood pressure".'}</p>
+    <button class="big-btn primary" id="addReminderBtn" style="margin-bottom:18px">${isZh?'+ 手动添加提醒':'+ Add reminder'}</button>
+    <h3 style="font-size:1.05rem;margin:0 0 8px">${isZh ? '即将到期' : 'Upcoming'} <span style="color:var(--muted);font-weight:500;font-size:.85rem">(${upcoming.length})</span></h3>
+    <div class="auto-grid" id="upcomingGrid">
+      ${upcoming.length === 0
+        ? `<div class="card" style="grid-column:1/-1;text-align:center;padding:30px;color:var(--muted-app)">${isZh ? '还没有提醒。让 AI 帮您添加一个吧。' : 'No reminders yet. Ask the AI to set one for you.'}</div>`
+        : upcoming.map(r => `
+        <div class="card-label card">
+          <div class="card-icon" style="background:linear-gradient(135deg,var(--gold),#D97706)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M5 3L2 6M22 6l-3-3M6 19l-2 2M18 19l2 2"/></svg>
+          </div>
+          <div class="card-text" style="min-width:0">
+            <div class="card-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(r.label)}</div>
+            <div class="card-sub" style="font-size:.82rem">
+              <span style="display:inline-block;padding:2px 8px;border-radius:6px;background:var(--bg);color:var(--muted);font-size:.72rem;margin-right:6px">${r.kind==='daily' ? (isZh?'每天':'daily') : (isZh?'一次':'once')}</span>
+              ${r.kind==='daily' && r.time_of_day ? (isZh ? `每天 ${r.time_of_day}` : `Every day ${r.time_of_day}`) : fmt(r.next_fire_at)}
+            </div>
+          </div>
+          <button class="big-btn ghost" data-rem-cancel="${r.id}" style="width:auto;min-width:0;font-size:.85rem;padding:8px 12px;color:var(--danger);border-color:var(--danger)">${isZh?'取消':'Cancel'}</button>
+        </div>
+      `).join('')}
+    </div>
+
+    ${past.length > 0 ? `
+      <h3 style="font-size:1.05rem;margin:24px 0 8px">${isZh ? '历史' : 'History'}</h3>
+      <div class="auto-grid" style="opacity:.7">
+        ${past.slice(0, 8).map(r => `
+          <div class="card-label card">
+            <div class="card-icon" style="background:var(--muted-app)">${r.status==='fired' ? ICON.check : ICON.close}</div>
+            <div class="card-text" style="min-width:0">
+              <div class="card-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:line-through;color:var(--muted)">${escapeHtml(r.label)}</div>
+              <div class="card-sub" style="font-size:.8rem">${r.status==='fired' ? (isZh?'已触发':'Fired') : (isZh?'已取消':'Cancelled')} · ${fmt(r.last_fired_at || r.next_fire_at)}</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    ` : ''}
+  `;
+  // Cancel handlers
+  root.querySelectorAll('[data-rem-cancel]').forEach(b => b.onclick = async () => {
+    const id = b.dataset.remCancel;
+    const ok = await showDialog({
+      title: isZh ? '取消提醒' : 'Cancel reminder',
+      body: isZh ? '确认取消这个提醒？' : 'Cancel this reminder?',
+      confirmLabel: isZh ? '取消' : 'Cancel',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await sb.from('reminders').update({ status: 'cancelled' }).eq('id', id);
+      toast(isZh ? '已取消' : 'Cancelled');
+      render();
+    } catch (e) { console.warn('cancel failed:', e); }
+  });
+  // Add reminder handler
+  const addBtn = document.getElementById('addReminderBtn');
+  if (addBtn) addBtn.onclick = () => addReminderManual();
+}
+
+async function addReminderManual() {
+  const isZh = state.lang === 'zh';
+  const label = await promptDialog({
+    title: isZh ? '提醒内容' : 'Reminder',
+    placeholder: isZh ? '如：服用阿司匹林' : 'e.g. Take aspirin',
+  });
+  if (!label) return;
+  const time = await promptDialog({
+    title: isZh ? '时间' : 'Time',
+    placeholder: isZh ? '如：2小时后 / 20:00 / tomorrow 8am' : 'e.g. in 2 hours / 20:00 / tomorrow 8am',
+  });
+  if (!time) return;
+  // Use a tiny "intent" interpreter: hand the time string to the LLM
+  // by sending a chat message "set a reminder for X at Y". This avoids
+  // writing another date parser.
+  if (window.LiveData && window.LiveData.llmChat) {
+    toast(isZh ? '正在处理…' : 'Processing…');
+    const messages = [
+      { role: 'system', content: 'You are a helpful assistant. When the user asks you to set a reminder, ALWAYS use the set_reminder tool. Compute the future timestamp in the user\'s local timezone and pass it as fire_at_iso (ISO 8601 UTC).' },
+      { role: 'user', content: `${isZh ? '请帮我设置一个提醒':'Please set a reminder'}: ${label} ${isZh ? '在':'at'} ${time}` }
+    ];
+    const r = await window.LiveData.llmChat(messages, { tools: APP_TOOLS, tool_choice: 'auto' });
+    if (r && r.tool_calls && r.tool_calls.some(c => c.function && c.function.name === 'set_reminder')) {
+      // The tool was already executed server-side (tool_results returned).
+      const tr = (r.tool_results || []).find(x => x && x.name === 'set_reminder');
+      if (tr && tr.result && tr.result.ok) {
+        const rem = tr.result.reminder;
+        const when = rem.kind === 'daily'
+          ? (isZh ? `每天 ${rem.time_of_day}` : `every day at ${rem.time_of_day}`)
+          : new Date(rem.next_fire_at).toLocaleString(isZh ? 'zh-CN' : 'en-US', { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' });
+        const speech = isZh ? `好的，已为您设置提醒：${rem.label}，${when}。` : `Got it. I set a reminder: ${rem.label}, ${when}.`;
+        speak(speech);
+        toast(speech);
+        // If the user is on the Reminders tab, re-render.
+        if (state.route === 'reminders') render();
+        return;
+      } else if (tr && tr.result && tr.result.error) {
+        toast((isZh ? '设置失败：' : 'Failed: ') + tr.result.error, true);
+        return;
+      }
+    }
+    // Fallback: model didn't emit the tool call.
+    const reply = (r && r.text) || (isZh ? '无法设置提醒，请重试。' : 'Could not set reminder, please try again.');
+    toast(reply, true);
+  }
+}
+
 // Simple text-input dialog (returns string or null)
 function promptDialog({ title, placeholder }) {
   return new Promise(res => {
@@ -3086,6 +3421,7 @@ async function renderMe(root) {
     state.chat = [];
     state._justEditedProfile = false;
     localStorage.removeItem('signedIn');
+    try { stopReminderScheduler(); } catch (_) {}
     applyState();
     toast(state.lang==='zh'?'已退出登录':'Signed out');
   };

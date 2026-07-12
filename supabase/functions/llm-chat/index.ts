@@ -190,12 +190,156 @@ serve(async (req) => {
     }
   }
 
+  // 6. Execute any tool calls the model emitted. Only `set_reminder` and
+  //    `cancel_reminder` need server-side action; the navigation / SOS
+  //    tools are client-side only.
+  const toolResults: any[] = [];
+  for (const call of toolCalls) {
+    const fn = call.function || {};
+    const name = fn.name;
+    let args: any = {};
+    try { args = fn.arguments ? JSON.parse(fn.arguments) : {}; } catch (_) {}
+    try {
+      if (name === 'set_reminder') {
+        const r = await executeSetReminder(admin, userId, args, tzOffsetMinutes);
+        toolResults.push({ name, args, result: r });
+      } else if (name === 'cancel_reminder') {
+        const r = await executeCancelReminder(admin, userId, args);
+        toolResults.push({ name, args, result: r });
+      } else {
+        // Client-side tools (navigate, open_*, trigger_sos, etc.) — the
+        // client will execute them on receipt. We just echo back the call.
+        toolResults.push({ name, args, result: { deferred: true } });
+      }
+    } catch (e) {
+      toolResults.push({ name, args, result: { error: e.message || String(e) } });
+    }
+  }
+
   return jsonResponse({
     reply,
     tool_calls: toolCalls,
+    tool_results: toolResults,
     usage: { prompt_tokens: inTokens, completion_tokens: outTokens, total_tokens: inTokens + outTokens, credits_used: realCredits },
     credits_remaining: cred.credits_remaining,
     credits_total:     cred.credits_total,
     reset_at:          cred.reset_at
   });
 });
+
+// =====================================================================
+// Tool executors
+// =====================================================================
+
+/**
+ * Compute the next fire time for a reminder. Accepts either a relative
+ * time (e.g. "in 2 hours") or an absolute time (ISO / "tomorrow 8am")
+ * in the user's timezone. Returns a UTC timestamptz string.
+ */
+function computeFireAt(args: any, tzOffsetMinutes: number): { fire_at: string; time_of_day: string | null; kind: 'one_off' | 'daily' } | { error: string } {
+  // args can have: when (string), repeat ('once' | 'daily'), hour, minute
+  const when = String(args.when || args.fire_at || args.time || '').trim();
+  const repeat = String(args.repeat || 'once').toLowerCase();
+  const kind: 'one_off' | 'daily' = (repeat === 'daily' || repeat === 'every_day') ? 'daily' : 'one_off';
+
+  // The client already converts natural language like "in 2 hours" into
+  // a structured ISO timestamp and passes it as args.fire_at_iso. If we
+  // receive an ISO string, use it directly.
+  const isoIn = String(args.fire_at_iso || '').trim();
+  if (isoIn) {
+    const d = new Date(isoIn);
+    if (!isNaN(d.getTime())) {
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      return {
+        fire_at: d.toISOString(),
+        time_of_day: kind === 'daily' ? `${hh}:${mm}` : null,
+        kind
+      };
+    }
+  }
+
+  // Try parsing "HH:MM" for daily reminders.
+  const m = when.match(/^(\d{1,2}):(\d{2})$/);
+  if (m) {
+    const hh = String(Math.min(23, Math.max(0, parseInt(m[1], 10)))).padStart(2, '0');
+    const mm = String(Math.min(59, Math.max(0, parseInt(m[2], 10)))).padStart(2, '0');
+    return {
+      fire_at: null,
+      time_of_day: `${hh}:${mm}`,
+      kind: 'daily'
+    };
+  }
+
+  // Try parsing "YYYY-MM-DD HH:MM" or other common formats.
+  if (when) {
+    const d = new Date(when);
+    if (!isNaN(d.getTime())) {
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      return {
+        fire_at: d.toISOString(),
+        time_of_day: kind === 'daily' ? `${hh}:${mm}` : null,
+        kind
+      };
+    }
+  }
+
+  return { error: 'Could not parse the reminder time. Use ISO 8601, HH:MM, or pass fire_at_iso.' };
+}
+
+async function executeSetReminder(admin: any, userId: string, args: any, tzOffsetMinutes: number) {
+  const label = String(args.label || args.text || '提醒').trim().slice(0, 200);
+  if (!label) return { error: 'Missing label' };
+
+  const computed = computeFireAt(args, tzOffsetMinutes);
+  if ('error' in computed) return computed;
+  const { fire_at, time_of_day, kind } = computed;
+
+  // For daily reminders, compute the next fire time as the next HH:MM
+  // occurrence in the user's local timezone.
+  let next_fire_at: string;
+  if (kind === 'daily' && time_of_day) {
+    const [hh, mm] = time_of_day.split(':').map(s => parseInt(s, 10));
+    const now = new Date();
+    const localNow = new Date(now.getTime() + tzOffsetMinutes * 60_000);
+    let target = new Date(Date.UTC(
+      localNow.getUTCFullYear(), localNow.getUTCMonth(), localNow.getUTCDate(),
+      hh, mm, 0, 0
+    ));
+    if (target.getTime() <= now.getTime() + tzOffsetMinutes * 60_000) {
+      target = new Date(target.getTime() + 24 * 3600_000);
+    }
+    next_fire_at = new Date(target.getTime() - tzOffsetMinutes * 60_000).toISOString();
+  } else if (fire_at) {
+    next_fire_at = fire_at;
+  } else {
+    return { error: 'No fire time computed' };
+  }
+
+  const ins = await admin.from('reminders').insert({
+    user_id: userId,
+    label,
+    kind,
+    fire_at: fire_at || null,
+    time_of_day: time_of_day || null,
+    next_fire_at,
+    status: 'scheduled',
+    source: 'chat'
+  }).select('id, label, kind, next_fire_at, time_of_day').single();
+  if (ins.error) return { error: ins.error.message };
+  return { ok: true, reminder: ins.data };
+}
+
+async function executeCancelReminder(admin: any, userId: string, args: any) {
+  const id = String(args.id || args.reminder_id || '').trim();
+  if (!id) return { error: 'Missing reminder id' };
+  const upd = await admin.from('reminders')
+    .update({ status: 'cancelled' })
+    .eq('id', id)
+    .eq('user_id', userId)
+    .select('id, label, status')
+    .single();
+  if (upd.error) return { error: upd.error.message };
+  return { ok: true, reminder: upd.data };
+}

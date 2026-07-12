@@ -833,30 +833,44 @@ const TOOLS = {
   call_sos:    { reply: () => t('aiReplySos'), action: () => triggerSos(false) },
 };
 
-// Helper: scan a long message for scam signals and return a concise verdict
-function aiScamCheck(text) {
+// Helper: build the "danger" warning message from a scam result object.
+// Both the LLM result and the legacy rule result expose the same shape
+// {verdict, reasons:[{zh,en}], advice:{zh,en}}, so this works for either.
+function scamDangerReply(r) {
+  const reasons = (r.reasons || []).slice(0, 4)
+    .map(x => '• ' + (state.lang === 'zh' ? (x.zh || x.en) : (x.en || x.zh)))
+    .join('\n');
+  return state.lang === 'zh'
+    ? `⚠️ 警告：这条消息很可能是诈骗。\n\n${(r.advice && r.advice.zh) || ''}\n\n命中特征：\n${reasons}\n\n已为您打开「防诈骗检测」查看详情。`
+    : `⚠️ Warning: this message is very likely a scam.\n\n${(r.advice && r.advice.en) || ''}\n\nSignals detected:\n${reasons}\n\nOpening Anti-Scam Shield for full analysis.`;
+}
+
+// Helper: scan a message for scam signals. The VERDICT comes straight from
+// the LLM (analyzeScamLLM) — we never let a rule list decide safety. We only
+// hard-block the conversation on a clear DANGER, so the model's broader
+// "caution" verdict never hijacks normal chat. Rules are used only as a
+// last-resort fallback when the LLM is unavailable.
+async function aiScamCheck(text) {
   if (!text || text.length < 15) return null;
   // Skip if text is clearly a chat command (already handled by aiMatchTool)
   if (aiMatchTool(text)) return null;
-  const r = analyzeScam(text);
-  // Only surface danger or caution, not safe (too noisy for a chat)
-  if (r.verdict === 'danger') {
-    return {
-      reply: state.lang==='zh'
-        ? `⚠️ 警告：这条消息很可能是诈骗。\n\n${r.advice.zh}\n\n命中特征：\n${r.reasons.slice(0,4).map(x => '• ' + x.zh).join('\n')}\n\n已为您打开「防诈骗检测」查看详情。`
-        : `⚠️ Warning: this message is very likely a scam.\n\n${r.advice.en}\n\nSignals detected:\n${r.reasons.slice(0,4).map(x => '• ' + x.en).join('\n')}\n\nOpening Anti-Scam Shield for full analysis.`,
-      tool: '🛡️ ai_scam_check',
-      action: () => go('scam'),
-    };
-  }
-  if (r.verdict === 'caution') {
-    return {
-      reply: state.lang==='zh'
-        ? `⚠️ 提醒：这条消息中有可疑内容。\n\n${r.advice.zh}\n\n命中特征：\n${r.reasons.slice(0,3).map(x => '• ' + x.zh).join('\n')}\n\n让我帮您打开「防诈骗检测」进一步分析。`
-        : `⚠️ Heads up: this message has suspicious content.\n\n${r.advice.en}\n\nSignals detected:\n${r.reasons.slice(0,3).map(x => '• ' + x.en).join('\n')}\n\nOpening Anti-Scam Shield for further analysis.`,
-      tool: '🛡️ ai_scam_check',
-      action: () => go('scam'),
-    };
+
+  if (window.LiveData && window.LiveData.analyzeScamLLM) {
+    const r = await window.LiveData.analyzeScamLLM(text, state.lang);
+    if (r && r.verdict && !r.error) {
+      if (r.verdict === 'danger') {
+        return { reply: scamDangerReply(r), tool: '🛡️ ai_scam_check', action: () => go('scam') };
+      }
+      // caution / safe: don't interrupt the conversation.
+      return null;
+    }
+    // LLM call failed — fall back to rules so obvious scams still trip.
+    if (r && r._fallbackEligible) {
+      const fb = analyzeScam(text);
+      if (fb.verdict === 'danger') {
+        return { reply: scamDangerReply(fb), tool: '🛡️ ai_scam_check', action: () => go('scam') };
+      }
+    }
   }
   return null;
 }
@@ -875,8 +889,8 @@ function aiMatchTool(text) {
 }
 
 async function aiChat(userText) {
-  // 1) First, run a heuristic scam check on the message itself.
-  const scam = aiScamCheck(userText);
+  // 1) First, run a scam check on the message itself (verdict from the LLM).
+  const scam = await aiScamCheck(userText);
   if (scam) {
     if (scam.action) scam.action();
     return { reply: scam.reply, tool: scam.tool };
@@ -888,6 +902,20 @@ async function aiChat(userText) {
   if (tool) {
     if (tool === 'check_scam') {
       const quoted = (userText.match(/[""「]([^""」]+)[""」]/) || [])[1] || '';
+      if (quoted && window.LiveData && window.LiveData.analyzeScamLLM) {
+        const r = await window.LiveData.analyzeScamLLM(quoted, state.lang);
+        if (r && r.verdict && !r.error) {
+          const verdictLabel = r.verdict === 'danger' ? (state.lang==='zh'?'极可能是诈骗':'Highly likely a scam') : r.verdict === 'caution' ? (state.lang==='zh'?'信息中有可疑内容':'Suspicious content') : (state.lang==='zh'?'未发现明显风险':'No obvious risk');
+          const reasons = (r.reasons||[]).slice(0,5).map(x => '• ' + (state.lang==='zh' ? (x.zh||x.en) : (x.en||x.zh))).join('\n');
+          const advice = (r.advice && (state.lang==='zh' ? r.advice.zh : r.advice.en)) || '';
+          return {
+            reply: state.lang==='zh'
+              ? `${verdictLabel}\n\n${advice}\n\n命中特征：\n${reasons || '（无）'}`
+              : `${verdictLabel}\n\n${advice}\n\nSignals:\n${reasons || '(none)'}`,
+            tool: '🛡️ check_scam'
+          };
+        }
+      }
       if (quoted) {
         const r = analyzeScam(quoted);
         const verdictLabel = r.verdict === 'danger' ? (state.lang==='zh'?'极可能是诈骗':'Highly likely a scam') : r.verdict === 'caution' ? (state.lang==='zh'?'信息中有可疑内容':'Suspicious content') : (state.lang==='zh'?'未发现明显风险':'No obvious risk');

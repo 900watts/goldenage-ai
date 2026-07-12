@@ -923,7 +923,7 @@ async function analyzeScamLLM(input, lang = 'zh') {
   const r = await llmChat([
     { role: 'system', content: SCAM_SYSTEM_PROMPT },
     { role: 'user', content: input }
-  ], { temperature: 0.2, max_tokens: 600 });
+  ], { temperature: 0.2, max_tokens: 600, action: 'scam_check' });
   if (r && r.text) {
     // Strip ```json fences and parse.
     const cleaned = r.text.replace(/```(?:json)?/g, '').replace(/```/g, '').trim();

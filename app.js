@@ -2490,6 +2490,11 @@ let activeCrisisAlerts = [];
 const crisisSnoozed = new Set();
 let crisisStylesInjected = false;
 let alarmAudioCtx = null;
+// Live set of elder ids this user is allowed to monitor. Kept fresh by
+// refreshMonitoredElderIds() (called on every poll) so a pairing made on
+// another device shows up within ~5s without a reload.
+let monitoredElderIds = [];
+let crisisPollTimer = null;
 
 function ensureCrisisStyles() {
   if (crisisStylesInjected) return;
@@ -2521,13 +2526,34 @@ function ensureCrisisStyles() {
   crisisStylesInjected = true;
 }
 
-// Elder ids this guardian is allowed to monitor (local guardians list +
-// the elder_account_id stored on the guardian's own profile).
+// Elder ids this guardian is allowed to monitor. We merge three sources so
+// the alert works even if one is missing:
+//   1) the live `guardians` table (source of truth after a fresh pairing)
+//   2) the local guardians list (immediate, from this browser's pairing UI)
+//   3) the guardian's own profile.elder_account_id (set by the RPC)
 function getMonitoredElderIds() {
-  const ids = new Set();
+  const ids = new Set(monitoredElderIds);
   if (Array.isArray(guardians)) guardians.forEach(g => { if (g && g.elder_id) ids.add(g.elder_id); });
   if (state.profile && state.profile.elder_account_id) ids.add(state.profile.elder_account_id);
   return [...ids];
+}
+
+// Re-pull the monitored elder ids LIVE from Supabase so a pairing performed
+// on another device / browser is reflected here without a manual refresh.
+async function refreshMonitoredElderIds() {
+  const ids = new Set();
+  if (Array.isArray(guardians)) guardians.forEach(g => { if (g && g.elder_id) ids.add(g.elder_id); });
+  if (state.profile && state.profile.elder_account_id) ids.add(state.profile.elder_account_id);
+  if (sbReady() && sbUser) {
+    try {
+      const { data } = await sb.from('guardians')
+        .select('elder_id')
+        .eq('guardian_id', sbUser.id)
+        .is('revoked_at', null);
+      (data || []).forEach(r => { if (r.elder_id) ids.add(r.elder_id); });
+    } catch (_) { /* non-fatal; fall back to local/profile sources */ }
+  }
+  monitoredElderIds = [...ids];
 }
 
 function toAlert(row) {
@@ -2555,10 +2581,16 @@ function removeCrisisAlert(id) {
 }
 
 // Pull any still-open crises for our elders (covers alerts that fired
-// while the app was closed).
+// while the app was closed). Refreshes the monitored elder ids first so
+// pairings made elsewhere are picked up live.
 async function refreshUnresolvedCrises() {
+  await refreshMonitoredElderIds();
   const elderIds = getMonitoredElderIds();
-  if (elderIds.length === 0) return;
+  if (elderIds.length === 0) {
+    // No elders to watch — clear any stale alerts and hide the popup.
+    if (activeCrisisAlerts.length) { activeCrisisAlerts = []; renderCrisisPopup(); }
+    return;
+  }
   try {
     const { data, error } = await sb.from('crisis_events')
       .select('id, user_id, kind, payload, created_at, resolved_at')
@@ -2576,8 +2608,14 @@ async function refreshUnresolvedCrises() {
 function setupCrisisAlerts() {
   if (!sbReady()) return;
   ensureCrisisStyles();
-  // Re-pull in case new elders were paired since we last ran.
+  // Immediate first pull (also warms the monitored-elder-id set).
   refreshUnresolvedCrises();
+  // Poll every 5s as a reliable fallback for Realtime gaps AND so pairing
+  // changes are reflected live without a page reload.
+  if (crisisPollTimer) clearInterval(crisisPollTimer);
+  crisisPollTimer = setInterval(() => {
+    try { refreshUnresolvedCrises(); } catch (_) {}
+  }, 5000);
   if (crisisChannel) return;
   try {
     crisisChannel = sb.channel('guardian-crisis-' + (sbUser ? sbUser.id : 'x'))
@@ -3805,12 +3843,16 @@ function renderGuardian(root) {
       danger: true,
     });
     if (ok) {
-      // If we have an elder_id, also clear the link in the DB.
+      // If we have an elder_id, also revoke the live link in the DB so the
+      // guardian's alert polling stops watching that elder immediately.
       const g = guardians[i];
       if (g && g.elder_id && sb) {
         try {
-          await sb.from('profiles').update({ guardian_account_id: null }).eq('id', g.elder_id);
-        } catch (_) {}
+          await sb.rpc('unpair_elder', { p_elder: g.elder_id });
+        } catch (_) {
+          // Fallback: clear the profile link directly.
+          try { await sb.from('profiles').update({ guardian_account_id: null }).eq('id', g.elder_id); } catch (_) {}
+        }
       }
       guardians.splice(i, 1);
       saveGuardians();

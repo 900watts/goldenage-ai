@@ -877,8 +877,9 @@ function aiMatchTool(text) {
   // will hijack a normal question and serve a canned reply instead of letting
   // the LLM answer. Casual questions fall through to aiChat's LLM path.
   const lower = text.toLowerCase();
-  // 1) Emergency — safety always wins.
-  if (/sos|求助|救命|紧急|摔倒|fall|chest|emergency|help me|救救我/i.test(text)) return 'call_sos';
+  // 1) Emergency — safety always wins. Broad injury / distress vocabulary so
+  // messages like "HELP IM BLEEDING" route to SOS instead of scam check.
+  if (/sos|求助|救命|紧急|摔倒|fall|fell|heart attack|stroke|seizure|unconscious|chok|can't breathe|cannot breathe|fire|burn|attacked|assaulted|robbed|pain|hurt|injur|wound|bleeding|bleed|blood|dying|dead|ambulance|police|\bhelp\b|help me|help us|help him|help her|help i'm|help im|help i am|救救我|救命啊|我需要帮助|帮帮我|流血|出血|受伤了|好痛|痛死了|不能呼吸|窒息|着火了|火灾|烧伤了|被攻击|心脏病|中风|抽搐|昏迷|救护车|报警|警察/i.test(text)) return 'call_sos';
   // 2) "Is this a scam?" / "check this message" intent → run the LLM scam analyzer.
   if (/(这|这是|这条|这个)(短信|信息|消息|链接|网址)?\s*(是|是不是|会不会).*(诈骗|骗子|假|骗|安全|safe)|is this (a )?(scam|fraud|safe)|check.*(scam|fraud)|verify.*(scam|fraud)|is it safe|should i (trust|click|open|pay)|can i trust|能(信|不能信)|可不可以信|帮我(查|看|判断|确认).*(诈骗|骗子|是不是骗)/i.test(text)) return 'check_scam';
   // 3) Explicit navigation ONLY. Require a clear verb (open / 打开 / show /
@@ -908,6 +909,12 @@ function guardianAskIntent(text) {
 }
 
 async function aiChat(userText) {
+  // 0) Safety-first: emergency/distress messages skip everything else.
+  if (aiMatchTool(userText) === 'call_sos') {
+    triggerSos(false);
+    return { reply: t('aiReplySos'), tool: '🚨 SOS' };
+  }
+
   // 1) First, run a scam check on the message itself (verdict from the LLM).
   const scam = await aiScamCheck(userText);
   if (scam) {

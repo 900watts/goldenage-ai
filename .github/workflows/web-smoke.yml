@@ -1,0 +1,23 @@
+name: Web Smoke
+
+# Complements ci.yml (which covers the Flutter/Dart app). This job guards the
+# static web client: a broken app.js/app-live.js must never reach Vercel via the
+# auto-deploy from `main`. Deterministic + network-free so it can't flake.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  client-syntax:
+    name: Client JS syntax check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax-check client JS
+        run: node scripts/smoke-check.mjs

@@ -1,0 +1,21 @@
+{
+  "name": "goldenage-ai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "GoldenAge AI — senior-friendly AI companion + guardian ecosystem (static web app hosted on Vercel).",
+  "scripts": {
+    "build": "echo 'Static site — no build step required'",
+    "vercel-build": "echo 'Vercel static build'",
+    "dev": "echo 'Open index.html in a browser, or run: npx serve .'"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "//": [
+    "This file is here so Vercel recognises the project as a Node-capable",
+    "package and activates Edge Middleware (middleware.ts at root).",
+    "Without it, Vercel treats the project as pure HTML and ignores the",
+    "middleware. There are no runtime dependencies — the static files in",
+    "this repo are served as-is, and middleware.ts runs at the edge."
+  ]
+}

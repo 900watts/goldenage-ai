@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>Access Denied — GoldenAge AI</title>
+<style>
+  :root {
+    --bg: #fff7f7;
+    --fg: #1a0a0a;
+    --muted: #6b3838;
+    --border: #fecaca;
+    --danger: #b91c1c;
+    --danger-strong: #7f1d1d;
+    --accent: #0c0c0c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Noto Sans SC", "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    max-width: 640px; width: 100%;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 36px 32px 30px;
+    box-shadow: 0 4px 24px rgba(127,29,29,.08);
+  }
+  .seal {
+    width: 84px; height: 84px;
+    background: linear-gradient(135deg, var(--danger), var(--danger-strong));
+    color: #fff;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 44px;
+    margin: 0 auto 18px;
+    box-shadow: 0 0 0 8px rgba(185,28,28,.08);
+  }
+  h1 {
+    margin: 0 0 8px;
+    font-size: 1.8rem;
+    text-align: center;
+    color: var(--danger-strong);
+    letter-spacing: -0.01em;
+  }
+  .sub {
+    text-align: center; color: var(--muted);
+    font-size: 1rem; margin: 0 0 28px;
+  }
+  .row {
+    display: flex; gap: 10px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 10px;
+    background: #fffafa;
+    font-size: 0.95rem;
+    word-break: break-all;
+  }
+  .row .k {
+    color: var(--muted); min-width: 80px;
+    font-weight: 600; flex-shrink: 0;
+  }
+  .row .v { color: var(--accent); font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .warn {
+    background: #fef3c7;
+    border: 1px solid #fbbf24;
+    border-radius: 12px;
+    padding: 16px;
+    margin: 22px 0;
+    color: #78350f;
+    font-size: 0.92rem;
+    line-height: 1.55;
+  }
+  .warn strong { color: #92400e; }
+  .actions {
+    display: flex; gap: 12px; flex-wrap: wrap;
+    margin-top: 22px;
+  }
+  .btn {
+    flex: 1; min-width: 220px;
+    padding: 14px 18px;
+    border-radius: 12px;
+    text-align: center;
+    font-weight: 700; font-size: 1rem;
+    text-decoration: none;
+    border: none; cursor: pointer;
+    font-family: inherit;
+  }
+  .btn.primary {
+    background: var(--danger);
+    color: #fff;
+  }
+  .btn.primary:hover { background: var(--danger-strong); }
+  .btn.ghost {
+    background: transparent;
+    color: var(--danger);
+    border: 1px solid var(--danger);
+  }
+  .footer {
+    text-align: center; color: var(--muted);
+    font-size: 0.8rem; margin-top: 22px;
+  }
+  @media (max-width: 480px) {
+    .card { padding: 24px 20px; }
+    h1 { font-size: 1.4rem; }
+    .row { flex-direction: column; gap: 2px; }
+    .row .k { min-width: 0; }
+  }
+</style>
+</head>
+<body>
+  <main class="card" role="alert" aria-live="assertive">
+    <div class="seal" aria-hidden="true">⛔</div>
+    <h1>Access Denied</h1>
+    <p class="sub">Your connection to <strong>GoldenAge AI</strong> has been blocked by an administrator.</p>
+
+    <div class="row"><span class="k">Your IP</span><span class="v" id="userIp">Detecting…</span></div>
+    <div class="row"><span class="k">Banned by</span><span class="v">Administrator (GoldenAge AI)</span></div>
+    <div class="row"><span class="k">Reason</span><span class="v" id="banReason">Abuse of the anonymous AI endpoint — repeated automated requests in violation of our fair-use policy.</span></div>
+    <div class="row"><span class="k">Date</span><span class="v" id="banDate"></span></div>
+
+    <div class="warn">
+      <strong>⚠️ SEVERE WARNING — PLEASE READ CAREFULLY</strong><br /><br />
+      This ban was issued because we detected activity from your network that
+      violates the GoldenAge AI acceptable-use policy. This incident has been
+      <strong>logged with your IP address and timestamp</strong>.<br /><br />
+      Continued attempts to access this service from your network, or attempts
+      to circumvent this ban (VPN, proxy, new accounts, etc.), will be
+      <strong>reported to your Internet Service Provider (ISP)</strong> and
+      may be referred to the relevant authorities.<br /><br />
+      If you believe this block is a mistake, you may appeal once by emailing
+      the administrator from an address you personally control. Repeat or
+      abusive appeals will not be considered.
+    </div>
+
+    <div class="actions">
+      <a class="btn primary" id="appealBtn" href="mailto:wattsrules@hotmail.com?subject=GoldenAge%20AI%20Ban%20Appeal">
+        ✉️ Appeal This Ban
+      </a>
+      <a class="btn ghost" href="https://www.goldenage.app">
+        Learn about GoldenAge AI
+      </a>
+    </div>
+
+    <p class="footer">GoldenAge AI · This page is served only to banned visitors. No tracking cookies are set.</p>
+  </main>
+
+  <script>
+    // Best-effort: surface the visitor's own IP via a public echo service.
+    // If the request is blocked at the edge, this fetch will also be blocked
+    // and the field will show "Unknown" — that's fine, the warning is the
+    // same either way.
+    (async () => {
+      const el = document.getElementById('userIp');
+      try {
+        const r = await fetch('https://api.ipify.org?format=json', { cache: 'no-store' });
+        if (!r.ok) throw new Error('ipify ' + r.status);
+        const j = await r.json();
+        el.textContent = j.ip || 'Unknown';
+      } catch (e) {
+        el.textContent = 'Unknown (your network may be blocking IP-detection services)';
+      }
+      const d = new Date();
+      document.getElementById('banDate').textContent = d.toISOString().slice(0,10)
+        + ' (visit time) — ban may have been issued earlier';
+
+      // Pre-fill the appeal subject with the detected IP.
+      const appeal = document.getElementById('appealBtn');
+      if (el.textContent && el.textContent !== 'Detecting…') {
+        appeal.href = 'mailto:wattsrules@hotmail.com?subject='
+          + encodeURIComponent('GoldenAge AI Ban Appeal — IP ' + el.textContent)
+          + '&body=' + encodeURIComponent(
+            'Hello,\n\nMy IP address is ' + el.textContent + '.\n\nI believe I was blocked by mistake. ' +
+            'Please describe what you were doing when blocked and why you think it was a mistake:\n\n\n\n'
+            + '—\nThis appeal is sent from an address I personally control. I understand that false or abusive appeals will be ignored.'
+          );
+      }
+    })();
+  </script>
+</body>
+</html>

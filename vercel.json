@@ -7,6 +7,13 @@
       "headers": [
         { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
       ]
+    },
+    {
+      "source": "/banned",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" },
+        { "key": "X-Robots-Tag", "value": "noindex" }
+      ]
     }
   ]
 }

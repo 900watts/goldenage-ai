@@ -72,13 +72,23 @@ function jsonResponse(body, status = 200) {
   });
 }
 
+// IP blocklist — hard 403. Update by editing this constant and re-deploying.
+// (Authed users on these IPs are ALSO blocked: if you can't be trusted with
+// the unauthenticated path, you can't be trusted as a signed-in user either
+// — the function is intentionally a single chokepoint for AI access.)
+const BANNED_IPS: string[] = [
+  '216.236.45.165', // 2026-07-12 — 18 anonymous AI calls, Hong Kong, Eons Data
+];
+
 // Best-effort per-IP daily cap for anonymous chat. Returns true if the
 // request is allowed. Fails OPEN (returns true) on any error so the AI
 // never hard-breaks just because the cap table is missing or unavailable.
 async function checkAnonCap(admin: any, ip: string): Promise<boolean> {
   try {
     const day = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
-    const ANON_DAILY_LIMIT = 60;
+    // After the 2026-07-12 Hong Kong abuse we tightened the anon cap to
+    // 1 call/day per IP. Signed-in users are unaffected.
+    const ANON_DAILY_LIMIT = 1;
     const { data, error } = await admin
       .from('ai_anon_usage')
       .select('count')
@@ -266,10 +276,44 @@ serve(async (req) => {
     const userRes = await admin.auth.getUser(accessToken);
     if (userRes.data?.user) userId = userRes.data.user.id;
   }
+
+  // IP blocklist check — currently DISABLED. Supabase's edge gateway strips
+  // the client x-forwarded-for and replaces it with a platform egress IP
+  // (e.g. 125.117.58.96), so we cannot see the real caller IP from inside
+  // the function. The blocklist code is kept for future use when we
+  // deploy behind a Cloudflare front (which DOES forward the real client
+  // IP in CF-Connecting-IP).
+  //
+  // const xff = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim();
+  // const ip = xff
+  //           || (req.headers.get('x-real-ip') || '').trim()
+  //           || (req.headers.get('cf-connecting-ip') || '').trim()
+  //           || (req.headers.get('fly-client-ip') || '').trim()
+  //           || 'unknown';
+  // if (BANNED_IPS.includes(ip)) {
+  //   return jsonResponse({
+  //     error: 'ip_banned',
+  //     ip,
+  //     reason: 'Abuse of the anonymous AI endpoint (excessive unauthenticated requests, 2026-07-12).',
+  //     appeal_email: 'wattsrules@hotmail.com',
+  //     notice: 'This incident has been logged. Continued attempts will be reported to your ISP. If you believe this is a mistake, contact the appeal email above from an address you control.'
+  //   }, 403);
+  // }
+
   if (!userId) {
-    // Best-effort per-IP daily cap so the open endpoint can't be abused.
-    // If the cap table is missing or errors, we still allow (fail open).
-    const ip = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim() || 'unknown';
+    // Anon branch. After the 2026-07-12 HK abuse, the recommended
+    // production setting is verify_jwt=true on the function so anon
+    // requests never reach this line. With verify_jwt=false (the
+    // current dev setting for the AI preview), we still apply the
+    // 1/day IP cap. For real IP-based bans, use the Vercel WAF
+    // (vercel firewall ban add <ip>) — Supabase's edge gateway
+    // strips the client x-forwarded-for so we cannot reliably see
+    // the caller's IP from inside the function.
+    const xff = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim();
+    const ip = xff
+              || (req.headers.get('x-real-ip') || '').trim()
+              || (req.headers.get('cf-connecting-ip') || '').trim()
+              || 'unknown';
     const allowed = await checkAnonCap(admin, ip);
     if (!allowed) {
       return jsonResponse({

@@ -4363,6 +4363,13 @@ async function renderMe(root) {
       }).join('')
     : `<span class="text-soft" style="font-size:.9rem">${state.lang==='zh'?'未设置 — 打开「重新填写资料」选择您感兴趣的主题':'Not set — open "Edit profile" to pick topics'}</span>`;
   const initial     = (displayName[0] || '?').toUpperCase();
+  const isAdmin = !!(p.is_admin);
+  const adminBadge = isAdmin
+    ? `<span title="${state.lang==='zh'?'认证管理员':'Certified Admin'}" style="display:inline-flex;align-items:center;gap:4px;margin-left:8px;padding:3px 10px;border-radius:999px;background:linear-gradient(135deg,#0EA5E9,#22D3EE);color:#fff;font-size:.72rem;font-weight:700;letter-spacing:.04em;vertical-align:middle;box-shadow:0 1px 4px rgba(14,165,233,.35)">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        <span>${state.lang==='zh'?'认证管理员':'CERTIFIED ADMIN'}</span>
+      </span>`
+    : '';
   root.innerHTML = `
     <h2 class="section-title">${t('meTitle')}</h2>
     <div style="display:flex;align-items:center;gap:16px;margin-bottom:24px">
@@ -4370,7 +4377,7 @@ async function renderMe(root) {
         ${escapeHtml(initial)}
       </div>
       <div style="flex:1;min-width:0">
-        <div style="font-size:1.4rem;font-weight:700">${escapeHtml(displayName)}</div>
+        <div style="font-size:1.4rem;font-weight:700;display:flex;align-items:center;flex-wrap:wrap;gap:4px">${escapeHtml(displayName)}${adminBadge}</div>
         <div class="text-soft" style="font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(userEmail || userPhone || '')}</div>
         <div class="text-soft" style="font-size:.85rem;margin-top:2px">${state.lang==='zh'?'守护人：':'Guardian: '}${escapeHtml(guardianLine)}</div>
       </div>
@@ -4441,7 +4448,7 @@ async function renderMe(root) {
           <div style="font-size:.85rem;color:var(--muted);margin-bottom:2px">${state.lang==='zh'?'今日剩余信用':'Daily credits remaining'}</div>
           <div style="font-size:1.6rem;font-weight:700;line-height:1.1">
             <span id="aiCreditsRemaining">—</span>
-            <span style="font-size:1rem;color:var(--muted);font-weight:500"> / <span id="aiCreditsTotal">50</span></span>
+            <span style="font-size:1rem;color:var(--muted);font-weight:500"> / <span id="aiCreditsTotal">10</span></span>
           </div>
           <div id="aiCreditsReset" style="font-size:.75rem;color:var(--muted);margin-top:2px">${state.lang==='zh'?'每日 00:00 重置':'Resets at 00:00 local time'}</div>
         </div>
@@ -4496,7 +4503,18 @@ async function renderMe(root) {
     const r = await window.LiveData.llmReadCredits();
     if (r && r.ok) {
       if (remainingEl) remainingEl.textContent = r.credits_remaining;
-      if (totalEl)    totalEl.textContent     = r.credits_total || 50;
+      if (totalEl)    totalEl.textContent     = r.credits_total || 10;
+      // Admin sticker on the credits card too, mirroring the one in the
+      // profile header. Admin accounts have is_admin=true and an effectively
+      // unlimited balance — but we show the same "10" cap so the UI stays
+      // honest, plus a small "ADMIN" marker.
+      if (totalEl && r.is_admin) {
+        totalEl.textContent = '∞';
+        if (remainingEl) remainingEl.textContent = '∞';
+        if (resetEl && !r.reset_at) {
+          resetEl.textContent = (state.lang==='zh' ? '管理员：不受每日上限' : 'Admin: no daily cap');
+        }
+      }
       if (resetEl && r.reset_at) {
         const d = new Date(r.reset_at);
         const hh = String(d.getHours()).padStart(2, '0');

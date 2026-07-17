@@ -189,6 +189,11 @@ nav.scrolled{box-shadow:var(--shadow)}
 }
 .phone-bubble svg{width:28px;height:28px;color:#fff}
 @keyframes pulse{0%,100%{box-shadow:0 6px 20px rgba(249,115,22,.4)}50%{box-shadow:0 6px 30px rgba(249,115,22,.6)}}
+@keyframes statusPulse{0%,100%{opacity:1}50%{opacity:.4}}
+#status-dot.live{background:var(--safe);animation:statusPulse 2s infinite}
+#status-dot.down{background:var(--danger);animation:none}
+#status-badge.live{background:rgba(22,163,74,.08);border-color:rgba(22,163,74,.2);color:var(--safe)}
+#status-badge.down{background:rgba(220,38,38,.08);border-color:rgba(220,38,38,.2);color:var(--danger)}
 .phone-nav{
   display:flex;justify-content:space-around;padding:10px 0 14px;
   background:#fff;border-top:1px solid var(--border);
@@ -475,6 +480,10 @@ footer{background:var(--text);color:rgba(255,255,255,.7);padding:60px 24px 40px}
     <div class="hero-content">
       <div class="hero-badge" data-zh="智能伴侣 · 跨平台 · AI驱动" data-en="Companion-Driven · Cross-Platform · AI-Powered">
         智能伴侣 · 跨平台 · AI驱动
+      </div>
+      <div id="status-badge" style="display:inline-flex;align-items:center;gap:8px;padding:6px 14px;border-radius:999px;background:rgba(255,255,255,.7);border:1px solid var(--border);font-size:.82rem;font-weight:600;color:var(--muted);margin-bottom:8px;transition:all .3s">
+        <span id="status-dot" style="width:8px;height:8px;border-radius:50%;background:var(--muted);animation:pulse 2s infinite"></span>
+        <span id="status-text" data-zh="检查服务状态…" data-en="Checking status…">检查服务状态…</span>
       </div>
       <h1>
         <span class="accent2">银龄智伴</span> <span class="accent">（GoldenAge AI）</span><br>
@@ -1023,6 +1032,55 @@ document.querySelectorAll('.feature-card,.showcase-card,.tech-card,.arch-layer,.
   el.style.transition = 'opacity .6s ease,transform .6s ease';
   observer.observe(el);
 });
+
+// ===== Live Status Badge =====
+(function() {
+  var dot = document.getElementById('status-dot');
+  var text = document.getElementById('status-text');
+  var badge = document.getElementById('status-badge');
+  if (!dot || !text || !badge) return;
+  var isZh = document.documentElement.lang === 'zh-CN';
+
+  function setLive() {
+    dot.className = 'live';
+    badge.className = 'live';
+    text.textContent = isZh ? '服务正常运行' : 'All systems operational';
+  }
+  function setDown() {
+    dot.className = 'down';
+    badge.className = 'down';
+    text.textContent = isZh ? '服务异常' : 'Service degraded';
+  }
+
+  fetch('/api/status', { headers: { 'Accept': 'application/json' } })
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(data) {
+      if (data && data.status === 'ok') {
+        setLive();
+        // Also check the AI backend (Supabase Edge Function)
+        return fetch('https://exvlolipycabnqiaptib.supabase.co/functions/v1/llm-chat', { method: 'GET' })
+          .then(function(r) { if (!r.ok) throw new Error('AI down'); })
+          .then(function() { setLive(); })
+          .catch(function() {
+            // Edge is up but AI backend is down — show degraded
+            dot.className = 'down';
+            badge.className = 'down';
+            text.textContent = isZh ? 'AI服务暂不可用' : 'AI service degraded';
+          });
+      } else {
+        setDown();
+      }
+    })
+    .catch(function() { setDown(); });
+
+  // Auto-refresh every 60 seconds
+  setInterval(function() {
+    fetch('/api/status', { headers: { 'Accept': 'application/json' } })
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(data) { if (data && data.status === 'ok') setLive(); else setDown(); })
+      .catch(function() { setDown(); });
+  }, 60000);
+})();
 </script>
 
 </body>

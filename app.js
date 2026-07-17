@@ -901,7 +901,10 @@ async function aiChat(userText) {
   //    is the authoritative classifier and also catches emergencies this
   //    regex misses (e.g. "HELP IM BLEEDING" without the word "bleeding").
   if (isEmergency(userText)) {
-    triggerSos(false);
+    const reason = state.lang === 'zh'
+      ? 'AI检测到紧急求助: ' + userText.substring(0, 60)
+      : 'AI detected emergency: ' + userText.substring(0, 60);
+    triggerSos(false, reason);
     return { reply: t('aiReplySos'), tool: '🚨 SOS' };
   }
 
@@ -971,7 +974,7 @@ async function aiChat(userText) {
 
       // ── Emergency routed by the server Router LLM ──
       if (r.intent === 'EMERGENCY_RESCUE') {
-        triggerSos(false);
+        triggerSos(false, r.crisis_reason || null);
         return { reply: (r.reply || t('aiReplySos')), tool: '🚨 SOS' };
       }
 
@@ -1013,7 +1016,10 @@ async function aiChat(userText) {
             }, 300);
           } else if (name === 'trigger_sos') {
             toolLabel = '🆘 SOS';
-            setTimeout(() => { try { triggerSos(); } catch(_) {} }, 300);
+            const toolReason = state.lang === 'zh'
+              ? 'AI助手触发SOS工具: ' + userText.substring(0, 60)
+              : 'AI assistant triggered SOS tool: ' + userText.substring(0, 60);
+            setTimeout(() => { try { triggerSos(false, toolReason); } catch(_) {} }, 300);
           } else if (name === 'open_ai_sheet') {
             toolLabel = '💬 AI';
           } else if (name === 'open_finance') {
@@ -2406,7 +2412,7 @@ function renderFeatures(root) {
   root.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
 }
 
-async function triggerSos(askConfirm = true) {
+async function triggerSos(askConfirm = true, reason = null) {
   if (askConfirm) {
     const ok = await showDialog({ title: t('sos'), body: t('sosConfirm'), confirmLabel: t('sosConfirmAction'), cancelLabel: t('sosCancel'), danger: true });
     if (!ok) return;
@@ -2438,7 +2444,7 @@ async function triggerSos(askConfirm = true) {
   // Mirror the management app: record locally FIRST (resilient when the
   // network/Supabase is unavailable), then sync to Supabase in the
   // background. flushPendingSos() retries any unsynced records later.
-  const rec = { payload, at: Date.now() };
+  const rec = { payload, at: Date.now(), reason };
   try {
     const q = JSON.parse(localStorage.getItem('pending_sos') || '[]');
     q.push(rec);
@@ -2448,7 +2454,7 @@ async function triggerSos(askConfirm = true) {
   if (sbReady()) {
     try {
       const { data: insRow, error: insErr } = await sb.from('crisis_events')
-        .insert({ user_id: sbUser.id, kind: 'sos_button', payload })
+        .insert({ user_id: sbUser.id, kind: 'sos_button', payload, ai_reason: reason })
         .select('id')
         .single();
       // Clear this pending record on success.
@@ -2489,7 +2495,8 @@ async function flushPendingSos() {
       await sb.from('crisis_events').insert({
         user_id: sbUser.id,
         kind: 'sos_button',
-        payload: rec.payload
+        payload: rec.payload,
+        ai_reason: rec.reason || null
       });
     } catch (e) {
       remaining.push(rec); // keep to retry later

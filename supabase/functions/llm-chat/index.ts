@@ -206,6 +206,33 @@ async function runScamAnalysis(userText: string, lang: string): Promise<{ verdic
   return { verdict: extractScamVerdict(raw), text: raw };
 }
 
+// Derive a brief crisis reason from the user's message for the guardian.
+// Returns a short string (max ~80 chars) explaining why SOS was triggered.
+// This is NOT an LLM call — it's a fast keyword scan that produces a
+// human-readable label the guardian sees immediately. The LLM can overwrite
+// it later if needed.
+function crisisReasonFromText(text: string, lang: string): string {
+  const t = String(text || '').toLowerCase();
+  const isZh = lang === 'zh';
+  const checks: Array<[RegExp, string, string]> = [
+    [/bleeding|流血|出血|血流/, isZh ? '用户报告出血' : 'User reported bleeding'],
+    [/heart|心脏|心梗|chest pain|胸痛/, isZh ? '用户报告心脏不适' : 'User reported heart/chest pain'],
+    [/fall|fell|跌倒|摔倒/, isZh ? '用户报告跌倒' : 'User reported a fall'],
+    [/fire|着火|火灾|烧伤/, isZh ? '用户报告火灾' : 'User reported fire'],
+    [/attack|assault|rob|攻击|袭击|抢劫|被人打/, isZh ? '用户报告受到攻击' : 'User reported being attacked'],
+    [/chok|窒息|不能呼吸|can.?t breathe/, isZh ? '用户报告窒息' : 'User reported choking'],
+    [/ambulance|救护车|emergency/, isZh ? '用户请求救护车' : 'User requested ambulance'],
+    [/follow|跟踪|someone/, isZh ? '用户报告被跟踪' : 'User reported being followed'],
+    [/stroke|中风|seizure|抽搐|癫痫/, isZh ? '用户报告中风/癫痫' : 'User reported stroke/seizure'],
+    [/poison|中毒|煤气/, isZh ? '用户报告中毒' : 'User reported poisoning'],
+    [/unconscious|昏迷|晕/, isZh ? '用户报告失去意识' : 'User reported unconsciousness'],
+  ];
+  for (const [re, zh, en] of checks) {
+    if (re.test(t)) return isZh ? zh : en;
+  }
+  return isZh ? '用户发出紧急求助' : 'User sent emergency distress message';
+}
+
 // Human-readable label for the crisis_kind enum used by crisis_events.
 function crisisKindLabel(k: string, lang: string): string {
   const map: Record<string, { zh: string; en: string }> = {
@@ -385,6 +412,7 @@ serve(async (req) => {
         action: 'TRIGGER_EMERGENCY_UI',
         priority: 'CRITICAL',
         reply,
+        crisis_reason: crisisReasonFromText(userText, lang),
         anonymous: !userId,
         agent: userId ? undefined : { name: lang === 'zh' ? '小金' : 'Goldie', role: 'companion' }
       });

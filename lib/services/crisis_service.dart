@@ -36,6 +36,7 @@ class CrisisEvent {
     required this.kind,
     this.latitude,
     this.longitude,
+    this.aiReason,
     required this.createdAt,
     required this.guardianNotified,
   });
@@ -44,6 +45,7 @@ class CrisisEvent {
   final CrisisKind kind;
   final double? latitude;
   final double? longitude;
+  final String? aiReason;
   final DateTime createdAt;
   final bool guardianNotified;
 
@@ -56,6 +58,7 @@ class CrisisEvent {
         ),
         latitude: (m['latitude'] as num?)?.toDouble(),
         longitude: (m['longitude'] as num?)?.toDouble(),
+        aiReason: m['ai_reason'] as String?,
         createdAt: DateTime.parse(m['created_at'] as String),
         guardianNotified: m['guardian_notified'] as bool? ?? false,
       );
@@ -73,6 +76,7 @@ class CrisisService {
     double? latitude,
     double? longitude,
     Map<String, dynamic>? payload,
+    String? aiReason,
   }) async {
     final userId = _client.auth.currentUser?.id;
     if (userId == null) throw StateError('Not signed in');
@@ -84,10 +88,30 @@ class CrisisService {
           'latitude': latitude,
           'longitude': longitude,
           'payload': payload ?? {},
+          'ai_reason': aiReason ?? _kindReason(kind),
         })
         .select()
         .single();
     return CrisisEvent.fromMap(res);
+  }
+
+  /// Human-readable default reason for a crisis, used when no AI triage
+  /// reason is supplied. Keeps the guardian banner informative out-of-the-box.
+  static String _kindReason(CrisisKind kind) {
+    switch (kind) {
+      case CrisisKind.sosButton:
+        return '长辈按下了 SOS 紧急按钮 / Elder pressed the SOS button';
+      case CrisisKind.fallDetected:
+        return '检测到可能的跌倒 / Possible fall detected';
+      case CrisisKind.chestPainSearch:
+        return '搜索了胸痛相关的内容 / Searched chest-pain related content';
+      case CrisisKind.medMissedCritical:
+        return '漏服了关键药物 / Missed a critical medication';
+      case CrisisKind.noActivity24h:
+        return '超过 24 小时无活动 / No activity for over 24h';
+      case CrisisKind.manualAlert:
+        return '手动发起的求助 / Manual alert raised';
+    }
   }
 
   /// Recent crises (for the elder's own review).

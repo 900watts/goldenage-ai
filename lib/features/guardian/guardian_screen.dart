@@ -234,11 +234,25 @@ class _GuardianScreenState extends State<GuardianScreen> {
                       child: Row(
                         children: [
                           Expanded(
-                            child: Text(
-                              _elderNames[c.elderId]?.isNotEmpty == true
-                                  ? _elderNames[c.elderId]!
-                                  : '您的长辈',
-                              style: const TextStyle(color: Colors.white),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _elderNames[c.elderId]?.isNotEmpty == true
+                                      ? _elderNames[c.elderId]!
+                                      : '您的长辈',
+                                  style: const TextStyle(color: Colors.white),
+                                ),
+                                if (c.aiReason != null && c.aiReason!.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 2),
+                                    child: Text(
+                                      c.aiReason!,
+                                      style: const TextStyle(
+                                          color: Colors.white70, fontSize: 13),
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
                           TextButton(

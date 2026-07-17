@@ -47,6 +47,33 @@ export const config = {
 };
 
 export default function middleware(req: Request) {
+  const url = new URL(req.url);
+
+  // Public health endpoint for the landing-page status badge (coordinated
+  // with Trae Work). No DB call / secrets needed — it just confirms the edge
+  // + static app are serving. Trae wires the badge UI to fetch this.
+  // Returns 200 JSON; DB/AI health is verified client-side.
+  if (url.pathname === '/api/status') {
+    const body = JSON.stringify({
+      status: 'ok',
+      service: 'goldenage-ai',
+      region: req.headers.get('x-vercel-ip-country') || 'edge',
+      timestamp: new Date().toISOString(),
+      version: '1.0.0',
+      checks: { edge: 'ok', ipBan: 'active', middleware: 'ok' },
+      note: 'Edge + static app are live. DB/AI health is verified client-side.',
+    });
+    return new Response(body, {
+      status: 200,
+      headers: {
+        'content-type': 'application/json',
+        'cache-control': 'no-store',
+        'access-control-allow-origin': '*',
+        'x-ga-middleware': 'ok',
+      },
+    });
+  }
+
   const ip = getClientIp(req);
   if (BANNED_IPS.includes(ip)) {
     // Use a rewrite so the visitor sees the banned page but the URL

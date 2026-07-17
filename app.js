@@ -4482,6 +4482,11 @@ async function renderMe(root) {
       <button class="big-btn ghost" id="langToggle" style="width:auto;min-width:0;font-size:.95rem;padding:10px 18px">${state.lang==='zh'?'EN':'中文'}</button>
     </div>
 
+    <h3 style="font-size:1.1rem;margin:0 0 8px">${state.lang==='zh'?'紧急求助记录':'SOS History'}</h3>
+    <div class="card" style="padding:16px;margin-bottom:24px" id="sosHistoryCard">
+      <div class="text-soft" style="font-size:.9rem">${state.lang==='zh'?'加载中…':'Loading...'}</div>
+    </div>
+
     <button class="big-btn danger" id="logoutBtn">${ICON.close}<span>${t('meLogout')}</span></button>`;
   const epBtn = document.getElementById('editProfileBtn');
   if (epBtn) epBtn.onclick = () => { state._justEditedProfile = true; openSettingsWizard(); };
@@ -4535,6 +4540,80 @@ async function renderMe(root) {
   const refreshBtn = document.getElementById('aiCreditsRefresh');
   if (refreshBtn) refreshBtn.onclick = refreshCredits;
   refreshCredits();
+
+  // SOS History: show the elder's own crisis_events, newest first.
+  async function loadSosHistory() {
+    const card = document.getElementById('sosHistoryCard');
+    if (!card) return;
+    if (!sbReady()) {
+      card.innerHTML = `<div class="text-soft" style="font-size:.9rem">${state.lang==='zh'?'请先登录':'Sign in to view'}</div>`;
+      return;
+    }
+    try {
+      const { data, error } = await sb.from('crisis_events')
+        .select('id, kind, ai_reason, resolved_at, created_at, payload')
+        .eq('user_id', sbUser.id)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        card.innerHTML = `<div class="text-soft" style="font-size:.9rem">${state.lang==='zh'?'暂无求助记录':'No SOS events recorded'}</div>`;
+        return;
+      }
+      const isZh = state.lang === 'zh';
+      const kindLabels = {
+        sos_button: isZh ? '一键求助' : 'SOS Button',
+        fall_detected: isZh ? '跌倒检测' : 'Fall Detected',
+        chest_pain_search: isZh ? '胸痛求助' : 'Chest Pain',
+        med_missed_critical: isZh ? '漏药预警' : 'Missed Medication',
+        no_activity_24h: isZh ? '24小时无活动' : 'No Activity 24h',
+        manual_alert: isZh ? '手动报警' : 'Manual Alert',
+      };
+      card.innerHTML = data.map(ev => {
+        const time = new Date(ev.created_at).toLocaleString(isZh ? 'zh-CN' : 'en-US');
+        const kindLabel = kindLabels[ev.kind] || ev.kind;
+        const reason = ev.ai_reason ? `<div style="font-size:.82rem;color:var(--muted);margin-top:3px">${escapeHtml(ev.ai_reason)}</div>` : '';
+        const resolved = ev.resolved_at
+          ? `<span style="color:var(--safe);font-size:.78rem;font-weight:600">${isZh?'已处理':'Resolved'}</span>`
+          : `<span style="color:var(--danger);font-size:.78rem;font-weight:600">${isZh?'待处理':'Open'}</span>`;
+        const resolveBtn = !ev.resolved_at
+          ? `<button class="big-btn ghost" style="width:auto;min-width:0;padding:4px 12px;font-size:.78rem;margin-top:6px" data-resolve-id="${ev.id}">${isZh?'标记已处理':'Mark Resolved'}</button>`
+          : '';
+        return `<div style="padding:10px 0;border-bottom:1px solid var(--border-app)">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+            <div style="flex:1;min-width:0">
+              <span style="font-weight:600;font-size:.95rem">${escapeHtml(kindLabel)}</span>
+              <span style="font-size:.8rem;color:var(--muted);margin-left:8px">${time}</span>
+            </div>
+            ${resolved}
+          </div>
+          ${reason}
+          ${resolveBtn}
+        </div>`;
+      }).join('');
+      // Bind resolve buttons
+      card.querySelectorAll('[data-resolve-id]').forEach(btn => {
+        btn.onclick = async () => {
+          const id = btn.getAttribute('data-resolve-id');
+          btn.disabled = true;
+          btn.textContent = isZh ? '处理中…' : 'Resolving...';
+          try {
+            const { error } = await sb.from('crisis_events')
+              .update({ resolved_at: new Date().toISOString() })
+              .eq('id', id);
+            if (error) throw error;
+            loadSosHistory(); // refresh
+          } catch (e) {
+            btn.disabled = false;
+            btn.textContent = isZh ? '重试' : 'Retry';
+          }
+        };
+      });
+    } catch (e) {
+      card.innerHTML = `<div class="text-soft" style="font-size:.9rem">${state.lang==='zh'?'加载失败':'Failed to load'}</div>`;
+    }
+  }
+  loadSosHistory();
 
   // AI Agent card (soul + memories). The agent may not be in memory yet
   // on the very first render; ensure it is, then bind handlers. If the

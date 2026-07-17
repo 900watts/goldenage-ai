@@ -577,7 +577,7 @@ function applyI18n() {
     const k = el.dataset.i18nPlaceholder;
     if (I18N[state.lang][k]) el.placeholder = I18N[state.lang][k];
   });
-  document.title = '银龄智伴（GoldenAge AI）';
+  document.title = t('appTitle');
   document.getElementById('appTitle').textContent = t('appTitle');
 }
 
@@ -913,7 +913,16 @@ async function aiChat(userText) {
   const fast = parseAppIntent(userText);
   if (fast && TOOLS[fast]) {
     TOOLS[fast].action();
-    return { reply: TOOLS[fast].reply(), tool: '🔧 ' + fast };
+    const fastLabels = {
+      open_map: state.lang==='zh' ? '🗺️ 地图' : '🗺️ Map',
+      open_finance: state.lang==='zh' ? '💰 行情' : '💰 Markets',
+      open_news: state.lang==='zh' ? '📰 新闻' : '📰 News',
+      open_med: state.lang==='zh' ? '💊 用药' : '💊 Medication',
+      open_scam: state.lang==='zh' ? '🛡️ 防诈骗' : '🛡️ Anti-Scam',
+      open_guardian: state.lang==='zh' ? '👨‍👩‍👧 守护者' : '👨‍👩‍👧 Guardian',
+      open_me: state.lang==='zh' ? '⚙️ 我的' : '⚙️ Profile',
+    };
+    return { reply: TOOLS[fast].reply(), tool: fastLabels[fast] || ('🔧 ' + fast) };
   }
 
   // 1b) Cheap local replies (greetings, time) — no LLM roundtrip needed.
@@ -934,7 +943,7 @@ async function aiChat(userText) {
       if (r && r.text) {
         const remEl = document.getElementById('aiCreditsRemaining');
         if (remEl && r.credits_remaining != null) remEl.textContent = r.credits_remaining;
-        return { reply: r.text.trim(), tool: '👨‍👩‍👧 近况总结' };
+        return { reply: r.text.trim(), tool: state.lang==='zh' ? '👨‍👩‍👧 近况总结' : '👨‍👩‍👧 Guardian Summary' };
       }
       if (r && r.error) {
         if (r.error === 'insufficient_credits') {
@@ -988,7 +997,7 @@ async function aiChat(userText) {
           reply: scam.text
             ? scamDangerReply({ text: scam.text })
             : (state.lang === 'zh' ? '未检测到明显风险。' : 'No obvious risk found.'),
-          tool: '🛡️ 防诈骗检测'
+          tool: state.lang==='zh' ? '🛡️ 防诈骗检测' : '🛡️ Anti-Scam Check'
         };
       }
 
@@ -1023,25 +1032,25 @@ async function aiChat(userText) {
           } else if (name === 'open_ai_sheet') {
             toolLabel = '💬 AI';
           } else if (name === 'open_finance') {
-            toolLabel = '💰 行情';
+            toolLabel = state.lang==='zh' ? '💰 行情' : '💰 Markets';
             setTimeout(() => { try { go('finance'); } catch(_) {} }, 300);
           } else if (name === 'open_map') {
-            toolLabel = '🗺️ 地图';
+            toolLabel = state.lang==='zh' ? '🗺️ 地图' : '🗺️ Map';
             setTimeout(() => { try { go('map'); } catch(_) {} }, 300);
           } else if (name === 'open_news') {
-            toolLabel = '📰 新闻';
+            toolLabel = state.lang==='zh' ? '📰 新闻' : '📰 News';
             setTimeout(() => { try { go('news'); } catch(_) {} }, 300);
           } else if (name === 'open_scam') {
-            toolLabel = '🛡️ 防诈骗';
+            toolLabel = state.lang==='zh' ? '🛡️ 防诈骗' : '🛡️ Anti-Scam';
             setTimeout(() => { try { go('scam'); } catch(_) {} }, 300);
           } else if (name === 'open_medication') {
-            toolLabel = '💊 用药';
+            toolLabel = state.lang==='zh' ? '💊 用药' : '💊 Medication';
             setTimeout(() => { try { go('medication'); } catch(_) {} }, 300);
           } else if (name === 'open_guardian') {
-            toolLabel = '👨‍👩‍👧 守护者';
+            toolLabel = state.lang==='zh' ? '👨‍👩‍👧 守护者' : '👨‍👩‍👧 Guardian';
             setTimeout(() => { try { go('guardian'); } catch(_) {} }, 300);
           } else if (name === 'open_me') {
-            toolLabel = '⚙️ 我的';
+            toolLabel = state.lang==='zh' ? '⚙️ 我的' : '⚙️ Profile';
             setTimeout(() => { try { go('me'); } catch(_) {} }, 300);
           } else if (name === 'set_reminder') {
             const res = (r.tool_results || []).find(x => x && x.name === 'set_reminder' && JSON.stringify(x.args) === JSON.stringify(args));

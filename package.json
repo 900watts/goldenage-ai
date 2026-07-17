@@ -6,7 +6,10 @@
   "scripts": {
     "build": "echo 'Static site — no build step required'",
     "vercel-build": "echo 'Vercel static build'",
-    "dev": "echo 'Open index.html in a browser, or run: npx serve .'"
+    "dev": "echo 'Open index.html in a browser, or run: npx serve .'",
+    "check:syntax": "node --check app.js && node --check app-live.js && echo 'All JS files OK'",
+    "check:health": "curl -s -o /dev/null -w 'llm-chat: %{http_code}\\n' https://exvlolipycabnqiaptib.supabase.co/functions/v1/llm-chat",
+    "check": "npm run check:syntax && npm run check:health"
   },
   "engines": {
     "node": ">=18"

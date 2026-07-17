@@ -1,5 +1,7 @@
 # GoldenAge AI — Roadmap (FABLE 5 blindspot scan)
 
+> **Status (2026-07-17):** P1 + P2 COMPLETE. P0-DNS RESOLVED (Vercel token assigned `goldenage.ai`, `verified:true`). P0-PAT config-cleaned (user must still revoke the old leaked token). Only user-secret / user-decision items remain (FCM, `verify_jwt`).
+
 > Living plan. Coordinated with **Trae Work** via the shared channel
 > `900watts/goldenage-ai-collab` (`CHAT.txt` + `PROTOCOL.md`).
 > This file is the canonical backlog; the chat log carries the running
@@ -32,22 +34,22 @@
 
 ## Prioritized backlog
 
-### P0 — user-blocked (flag, do not burn cycles)
-- [ ] **Re-point `goldenage.ai` DNS to Vercel** (else middleware + domain dead). *USER*
-- [ ] **Rotate the GitHub PAT** + switch remote to a credential helper. *USER*
+### P0 — blockers (resolved or user-action)
+- [x] **`goldenage.ai` DNS → Vercel** — RESOLVED 2026-07-17 via Vercel token: domain was already on Vercel nameservers (`verified:true`); assigned to this project. IP-ban middleware + `/api/status` now enforce on `goldenage.ai`. *(WorkBuddy, vcp token)*
+- [~] **Rotate the GitHub PAT** — config DONE: remote URL cleaned (old leaked token removed; now git credential store w/ fresh token). REMAINING USER ACTION: revoke the old leaked PAT at GitHub → Settings → Developer settings → PATs. *(WorkBuddy 2026-07-17)*
 
 ### P1 — high value, safe
-- [x] Flutter: delete dead `lib/screens/guardian/guardian_screen.dart`; merge `aiReason` into live banner. *(WorkBuddy, 2026-07-17)*
-- [ ] Edge: `llm-chat` populate `crisis_events.ai_reason` server-side for web SOS (richer guardian context). Needs `app.js` + Edge Fn.
-- [ ] Add minimal CI gate: `node --check` on client files + a `curl` health script for `llm-chat`; run before push.
-- [ ] Web: show the elder's own SOS history (read `crisis_events` where `user_id = me`) in the Me/History screen.
+- [x] Flutter: delete dead `lib/screens/guardian/guardian_screen.dart`; merge `aiReason` into live banner. *(WorkBuddy, b39486f)*
+- [x] Edge: `llm-chat` populate `crisis_events.ai_reason` server-side for web SOS. *(Trae, ea8ecbb)*
+- [x] CI gate: `node --check` client smoke-check + health script, run on push/PR to main. *(WorkBuddy web-smoke.yml + Trae check:syntax/check:health)*
+- [x] Web: elder's own SOS history in Me/History + self-resolve. *(Trae, 94d56dd)*
 
 ### P2 — nice-to-have
-- [ ] i18n parity pass (zh/en) across new strings.
-- [ ] Landing page: live status badge + a real screenshot.
-- [ ] `notify-guardian`: add FCM/Twilio secrets for real SMS push. *USER provides secrets*
-- [ ] Flip `llm-chat` `verify_jwt=true` once the anonymous preview is no longer needed.
-- [ ] Tune anon cap 1/day → a saner number (e.g. 5/day) after DNS is fixed and traffic is observable.
+- [x] i18n parity pass (zh/en) across new strings. *(Trae, d562977)*
+- [x] Landing page: live status badge fetching `/api/status` (operational/degraded). *(Trae, ee37357; backend `/api/status` by WorkBuddy c97bd40)*
+- [ ] `notify-guardian`: add FCM/Twilio secrets for real SMS push. *BLOCKED — user provides secrets*
+- [ ] Flip `llm-chat` `verify_jwt=true` once the anonymous preview is no longer needed. *DEFERRED — user decision*
+- [ ] Tune anon cap 1/day → 5/day now that DNS is fixed and traffic is observable. *OPTIONAL — pending traffic data*
 
 ## Deviation log (FABLE 5 Phase 4)
 - **D1**: Originally planned to also deploy an Edge Fn change this pass.

@@ -55,3 +55,12 @@ openclaw/
 !/.workbuddy/memory/.gitkeep
 
 .vercel
+
+# --- Local WorkBuddy helper scripts (embed tokens, NEVER commit) ----
+_*.py
+_secrets.py
+_claim*.txt
+_done*.txt
+claim_*.txt
+done_*.txt
+TRAE_PROMPT.md

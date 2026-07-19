@@ -1,6 +1,6 @@
 # GoldenAge AI — Roadmap (FABLE 5 blindspot scan)
 
-> **Status (2026-07-17):** P1 + P2 COMPLETE. P0-DNS RESOLVED (Vercel token assigned `goldenage.ai`, `verified:true`). P0-PAT config-cleaned (user must still revoke the old leaked token). Only user-secret / user-decision items remain (FCM, `verify_jwt`).
+> **Status (2026-07-19):** P1 + P2 COMPLETE. P0-DNS REVERTED — `goldenage.ai` removed from Vercel project because the user does not own it; project now serves only on `*.vercel.app`. P0-PAT config-cleaned (user must still revoke the old leaked token). IP ban disabled (owner shared the banned IP). Only user-secret / user-decision items remain (FCM, `verify_jwt`).
 
 > Living plan. Coordinated with **Trae Work** via the shared channel
 > `900watts/goldenage-ai-collab` (`CHAT.txt` + `PROTOCOL.md`).
@@ -15,9 +15,11 @@
 - **Unknown unknowns (blindspots surfaced below) drove most of P0.**
 
 ## Blindspot scan (the "you don't know you don't know" list)
-1. **Domain DNS is dead.** `goldenage.ai` serves a parking page; Vercel
+1. ~~**Domain DNS is dead.** `goldenage.ai` serves a parking page; Vercel
    middleware (incl. the IP ban) never runs for real users. Highest-impact
-   hidden blocker — everything else is moot until the domain points at Vercel.
+   hidden blocker — everything else is moot until the domain points at Vercel.~~
+   *Resolved 2026-07-17 by assigning to Vercel, then reverted 2026-07-19
+   because the user does not own the domain. Project now uses `*.vercel.app`.*
 2. **Leaked credential.** The GitHub PAT is embedded in the local git remote
    URL (visible in `.git/config`). Anyone with repo read access to this
    machine can push as you. Rotate + use a credential helper.
@@ -35,7 +37,7 @@
 ## Prioritized backlog
 
 ### P0 — blockers (resolved or user-action)
-- [x] **`goldenage.ai` DNS → Vercel** — RESOLVED 2026-07-17 via Vercel token: domain was already on Vercel nameservers (`verified:true`); assigned to this project. IP-ban middleware + `/api/status` now enforce on `goldenage.ai`. *(WorkBuddy, vcp token)*
+- [x] **`goldenage.ai` removed from Vercel project** — User clarified they do not own `goldenage.ai`. Domain deleted from project 2026-07-19 via Vercel API. Project serves only on `goldenage-ai.vercel.app` and deployment URLs. *(WorkBuddy, vcp token)*
 - [~] **Rotate the GitHub PAT** — config DONE: remote URL cleaned (old leaked token removed; now git credential store w/ fresh token). REMAINING USER ACTION: revoke the old leaked PAT at GitHub → Settings → Developer settings → PATs. *(WorkBuddy 2026-07-17)*
 
 ### P1 — high value, safe
@@ -49,7 +51,7 @@
 - [x] Landing page: live status badge fetching `/api/status` (operational/degraded). *(Trae, ee37357; backend `/api/status` by WorkBuddy c97bd40)*
 - [ ] `notify-guardian`: add FCM/Twilio secrets for real SMS push. *BLOCKED — user provides secrets*
 - [ ] Flip `llm-chat` `verify_jwt=true` once the anonymous preview is no longer needed. *DEFERRED — user decision*
-- [ ] Tune anon cap 1/day → 5/day now that DNS is fixed and traffic is observable. *OPTIONAL — pending traffic data*
+- [ ] Tune anon cap 1/day → 5/day once real traffic data is available. *OPTIONAL — pending traffic data*
 
 ## Deviation log (FABLE 5 Phase 4)
 - **D1**: Originally planned to also deploy an Edge Fn change this pass.

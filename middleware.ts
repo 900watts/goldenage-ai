@@ -15,9 +15,16 @@
 // To add a new ban: append the IP to BANNED_IPS, commit, push.
 // =====================================================================
 
+// TEMPORARILY DISABLED 2026-07-19 (owner locked out).
+// After goldenage.ai was wired to Vercel, the edge ban started running for
+// real traffic and caught the SITE OWNER — their current client IP matched
+// 216.236.45.165. That IP also appears as the earlier "anon abuse" source,
+// i.e. the owner and the abuser share / sit behind the same IP, so banning
+// it bans the owner too. Re-enable ONLY after confirming the real abuser IP
+// from Supabase logs AND that it differs from the owner's IP.
 const BANNED_IPS: string[] = [
-  '216.236.45.165', // 2026-07-12 — 18 anonymous AI calls, Hong Kong, Eons Data
-  // '1.2.3.4',     // <-- example
+  // '216.236.45.165', // DISABLED: suspected owner IP — do not re-enable blindly
+  // '1.2.3.4',        // <-- example
 ];
 
 // Vercel puts the real client IP first in x-forwarded-for, but it may

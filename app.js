@@ -1356,6 +1356,127 @@ function render() {
 // Sunset-on-navy login. Instant tab switching (swap form slot only, no full
 // re-render). Email fields run a best-effort existence check; new users fall
 // through the existing finishSignIn -> setup wizard path.
+//
+// Cloudflare Turnstile (invisible-mode widget) gates every auth call. Token
+// is produced on the client and verified server-side via the
+// `verify-turnstile` Supabase edge function (TURNSTILE_SECRET is server-side).
+
+const TURNSTILE_SITE_KEY = '0x4AAAAAAD5062bOEo5xRbi7';
+let _turnstileReady = null;
+let _turnstileWidgetId = null;
+let _turnstileTokenResolver = null;
+
+function onTurnstileReady() {
+  if (window._turnstileReadyResolve) {
+    window._turnstileReadyResolve(window.turnstile);
+    window._turnstileReadyResolve = null;
+  }
+}
+window._turnstileReadyResolve = null;
+
+function ensureTurnstile() {
+  if (_turnstileReady) return _turnstileReady;
+  _turnstileReady = new Promise((resolve) => {
+    if (window.turnstile) { resolve(window.turnstile); return; }
+    window._turnstileReadyResolve = resolve;
+    setTimeout(() => {
+      if (window.turnstile && window._turnstileReadyResolve) {
+        const r = window._turnstileReadyResolve(window.turnstile);
+        window._turnstileReadyResolve = null;
+      }
+    }, 250);
+  });
+  return _turnstileReady;
+}
+
+async function mountTurnstile(slotEl) {
+  if (!slotEl) return;
+  const ts = await ensureTurnstile();
+  if (!ts) return;
+  if (_turnstileWidgetId !== null) {
+    try { ts.remove(_turnstileWidgetId); } catch (_) {}
+    _turnstileWidgetId = null;
+  }
+  try {
+    _turnstileWidgetId = ts.render('#auth-turnstile', {
+      sitekey: TURNSTILE_SITE_KEY,
+      size: 'invisible',
+      execution: 'render',
+      callback: (token) => {
+        if (_turnstileTokenResolver) {
+          const r = _turnstileTokenResolver;
+          _turnstileTokenResolver = null;
+          r(token);
+        }
+      },
+      'error-callback': (err) => {
+        if (_turnstileTokenResolver) {
+          const r = _turnstileTokenResolver;
+          _turnstileTokenResolver = null;
+          r(Promise.reject(new Error('turnstile_widget_error: ' + err)));
+        }
+      },
+    });
+  } catch (e) {
+    console.warn('Turnstile mount failed', e);
+  }
+}
+
+function getTurnstileToken() {
+  if (!_turnstileWidgetId || !window.turnstile) {
+    return Promise.reject(new Error('turnstile_not_ready'));
+  }
+  return new Promise((resolve, reject) => {
+    _turnstileTokenResolver = resolve;
+    try {
+      window.turnstile.execute(_turnstileWidgetId, { action: 'auth' });
+    } catch (e) {
+      _turnstileTokenResolver = null;
+      reject(e);
+    }
+    setTimeout(() => {
+      if (_turnstileTokenResolver === resolve) {
+        _turnstileTokenResolver = null;
+        reject(new Error('turnstile_timeout'));
+      }
+    }, 12000);
+  });
+}
+
+async function verifyTurnstileOnServer(token) {
+  if (!token) return { ok: false, error: 'missing_token' };
+  try {
+    const r = await fetch(SB_URL + '/functions/v1/verify-turnstile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!j || j.ok !== true) {
+      return { ok: false, error: (j && j.error) || 'verify_failed', status: r.status };
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: 'verify_unreachable: ' + (e && e.message || e) };
+  }
+}
+
+async function requireTurnstile(toastMsg) {
+  let token;
+  try {
+    token = await getTurnstileToken();
+  } catch (e) {
+    if (toastMsg) toast(toastMsg + ' (widget: ' + (e.message || e) + ')', true);
+    return false;
+  }
+  const r = await verifyTurnstileOnServer(token);
+  if (!r.ok) {
+    if (toastMsg) toast(toastMsg + ' (verify: ' + r.error + ')', true);
+    return false;
+  }
+  return true;
+}
+
 function authStatusEl(kind, text) {
   if (!text) return "";
   return `<div class="auth-status ${kind}" id="authStatus"><span class="dot"></span>${escapeHtml(text)}</div>`;
@@ -1476,6 +1597,8 @@ function authFormInner(tab, screen, isZh) {
         <label class="auth-label">${isZh?"密码":"Password"}</label>
         <input id="pwdInput" class="auth-input" type="password" autocomplete="${renderAuth._pwdMode==="up"?"new-password":"current-password"}" style="letter-spacing:2px" placeholder="${renderAuth._pwdMode === "up" ? (isZh?"设置密码（≥6位）":"Set a password (6+ chars)") : (isZh?"输入密码":"Enter password")}">
         <div style="height:18px"></div>
+
+        <div id="auth-turnstile" style="min-height:0;margin:0"></div>
         <button class="auth-cta" id="pwdPrimaryBtn">${isZh?"登录 / Sign In":"Sign In"}</button>
         <div class="auth-toggle">
           <span id="pwdToggleLink">${renderAuth._pwdMode === "up" ? (isZh?"已有账户？直接登录":"Already have an account? Sign In") : (isZh?"还没账户？立即注册（无需邮箱验证）":"New here? Create an account (no email verify)")}</span>
@@ -1488,6 +1611,8 @@ function authFormInner(tab, screen, isZh) {
       <input id="phoneInput" class="auth-input" maxlength="20" placeholder="${t("authPlaceholder")}">
       <p class="auth-hint">${t("authPhoneHint")}</p>
       <div style="height:14px"></div>
+
+      <div id="auth-turnstile" style="min-height:0;margin:0"></div>
       <button class="auth-cta" id="sendBtn">${t("authSend")}</button>
     </div>`;
   return `
@@ -1497,6 +1622,8 @@ function authFormInner(tab, screen, isZh) {
       <div id="authStatusWrap" style="min-height:18px;margin-top:6px">${authStatusEl("checking", isZh?"输入邮箱即可检测账户":"Type your email to check")}</div>
       <p class="auth-hint">${t("authSmsHint")}</p>
       <div style="height:14px"></div>
+
+      <div id="auth-turnstile" style="min-height:0;margin:0"></div>
       <button class="auth-cta" id="sendEmailBtn">${t("authSend")}</button>
       <div class="auth-note">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F2A93B" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
@@ -1608,12 +1735,14 @@ function bindAuthForm() {
       });
     }
   }
+  if (document.getElementById('auth-turnstile')) mountTurnstile(document.getElementById('auth-turnstile'));
 }
 
 async function onSendPhone() {
   const isZh = state.lang === 'zh';
   const v = document.getElementById('phoneInput').value.trim();
   if (v.length < 6) return toast(isZh?'请输入手机号':'Enter your phone', true);
+  if (!await requireTurnstile(isZh ? '请先完成人机验证' : 'Please complete human verification first')) return;
   renderAuth._phone = v;
   if (!sb) { renderAuth._screen='otp'; render(); return; }
   const btn = document.getElementById('sendBtn');
@@ -1639,6 +1768,7 @@ async function onSendEmail() {
   const isZh = state.lang === 'zh';
   const v = document.getElementById('emailInput').value.trim();
   if (!/^[^@]+@[^@]+\.[^@]+$/.test(v)) return toast(isZh?'请输入有效的邮箱地址':'Enter a valid email', true);
+  if (!await requireTurnstile(isZh ? '请先完成人机验证' : 'Please complete human verification first')) return;
   const domain = v.split('@')[1]?.toLowerCase() || '';
   if (!/^([a-z0-9-]+\.)+[a-z]{2,}$/.test(domain) || /gmail\.con|gmai\.com|gmial\.com|yahoo\.con|hotmai\.com/.test(v)) {
     return toast(isZh?'邮箱域名看起来不正确（请检查拼写）':'Email domain looks incorrect — check spelling', true);
@@ -1744,6 +1874,7 @@ async function onPwdSubmit(forceMode) {
   const password = pwdEl?.value || '';
   if (!/^[^@]+@[^@]+\.[^@]+$/.test(email)) return toast(isZh ? '请输入有效的邮箱' : 'Enter a valid email', true);
   if (password.length < 6) return toast(isZh ? '密码至少 6 位' : 'Password must be 6+ characters', true);
+  if (!await requireTurnstile(isZh ? '请先完成人机验证' : 'Please complete human verification first')) return;
 
   // Determine which button was clicked (or use forced mode)
   const mode = forceMode || (renderAuth._pwdMode === 'up' ? 'up' : 'in');

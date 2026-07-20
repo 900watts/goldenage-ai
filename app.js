@@ -2137,7 +2137,7 @@ function renderAuthSetup(root, isZh) {
   const stepHtml = [wizardStep1(w, isZh), wizardStep2(w, isZh), wizardStep3(w, isZh)][w.step];
 
   root.innerHTML = `
-    <div class="auth-stage" style="overflow-y:auto;align-items:flex-start;padding-top:24px">
+    <div class="auth-stage">
       <div style="width:100%;max-width:520px;color:#FBEEDB">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
         <div style="font-size:.9rem;color:rgba(251,238,219,.55)">${w.step+1} / ${total}</div>

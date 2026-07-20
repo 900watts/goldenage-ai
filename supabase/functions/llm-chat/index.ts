@@ -367,6 +367,12 @@ serve(async (req) => {
   }
 
   // ── Isolated scam-check path ────────────────────────────────────────────
+  // Determine the user's timezone offset (minutes from UTC). Default +08:00.
+  // Hoisted ABOVE the scam_check branch because that branch needs `lang`.
+  const tzOffsetMinutes = Number.isFinite(body?.tz_offset_minutes) ? Math.trunc(body?.tz_offset_minutes) : 480;
+  // Language for auto-config prompts (zh default).
+  const lang = (body?.lang === 'en') ? 'en' : 'zh';
+
   // The anti-scam analyzer must run DIRECTLY against the LLM, NOT through the
   // companion persona / memory pipeline. We isolate it here so that:
   //   - the scanned scam text is NEVER captured into the user's agent memory,
@@ -384,11 +390,6 @@ serve(async (req) => {
       return jsonResponse({ error: 'scam_llm_failed', detail: e?.message || String(e) }, 502);
     }
   }
-
-  // Determine the user's timezone offset (minutes from UTC). Default +08:00.
-  const tzOffsetMinutes = Number.isFinite(body?.tz_offset_minutes) ? Math.trunc(body.tz_offset_minutes) : 480;
-  // Language for auto-config prompts (zh default).
-  const lang = (body?.lang === 'en') ? 'en' : 'zh';
 
   // ── STEP 1: Intent Router (LLM classification) ─────────────────────────
   // Classify the user's intent BEFORE any other pipeline runs, so an

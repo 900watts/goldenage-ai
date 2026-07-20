@@ -7,31 +7,34 @@
 <link rel="icon" type="image/png" sizes="32x32" href="assets/icon/favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="assets/icon/icon-192.png">
 <link rel="apple-touch-icon" sizes="180x180" href="assets/icon/apple-touch-icon-180.png">
-<meta name="theme-color" content="#1a1d2e">
+<meta name="theme-color" content="#1A1530">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800&family=Source+Sans+3:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  --primary:#0D9488;
-  --primary-dark:#0F766E;
-  --secondary:#14B8A6;
-  --cta:#F97316;
-  --cta-dark:#EA580C;
-  --bg:#F0FDFA;
-  --bg-cream:#FFFBF5;
-  --text:#134E4A;
-  --text-soft:#3F5C5A;
-  --muted:#6B8785;
+  /* === Brand — sunset gradient (matches the app's auth screen) === */
+  --primary:#E88D56;            /* sunset orange */
+  --primary-dark:#C538B3;       /* magenta */
+  --secondary:#F2A93B;           /* gold */
+  --cta:#C538B3;                /* magenta CTA */
+  --cta-dark:#7B2D8B;           /* deep purple */
+  --bg:#FFF6EA;                 /* warm cream */
+  --bg-cream:#FFF6EA;
+  --text:#1A1530;               /* deep navy */
+  --text-soft:#3B3350;
+  --muted:#6F6480;
   --card:#FFFFFF;
-  --border:#CBE7E2;
-  --gold:#E0A82E;
+  --border:#F2D8B5;
+  --gold:#F2A93B;
   --danger:#DC2626;
   --safe:#16A34A;
   --warn:#F59E0B;
-  --shadow-sm:0 1px 3px rgba(15,118,110,.08);
-  --shadow:0 4px 20px rgba(15,118,110,.10);
-  --shadow-lg:0 12px 40px rgba(15,118,110,.14);
+  --grad-sunset:linear-gradient(135deg,#F2A93B 0%,#E88D56 35%,#C538B3 75%,#7B2D8B 100%);
+  --grad-sunset-soft:linear-gradient(135deg,rgba(242,169,59,.18) 0%,rgba(232,141,86,.14) 35%,rgba(197,56,179,.12) 75%,rgba(123,45,139,.10) 100%);
+  --shadow-sm:0 1px 3px rgba(197,56,179,.10);
+  --shadow:0 4px 20px rgba(197,56,179,.12);
+  --shadow-lg:0 12px 40px rgba(197,56,179,.18);
   --radius:18px;
   --radius-lg:28px;
   --maxw:1200px;
@@ -40,7 +43,10 @@
 html{scroll-behavior:smooth}
 body{
   font-family:'Source Sans 3','Noto Sans SC',system-ui,sans-serif;
-  background:var(--bg);
+  background:
+    radial-gradient(1100px 700px at 90% -10%, rgba(242,169,59,.10), transparent 60%),
+    radial-gradient(900px 600px at -10% 110%, rgba(197,56,179,.08), transparent 60%),
+    var(--bg);
   color:var(--text);
   line-height:1.6;
   overflow-x:hidden;
@@ -80,38 +86,38 @@ nav.scrolled{box-shadow:var(--shadow)}
 }
 .lang-toggle:hover{background:var(--primary-dark)}
 .nav-cta{
-  background:var(--cta);color:#fff;text-decoration:none;
-  padding:10px 22px;border-radius:12px;font-family:'Lexend';font-weight:600;
-  transition:all .25s;box-shadow:0 2px 8px rgba(249,115,22,.3);
+  background:var(--grad-sunset);color:#1A1530;text-decoration:none;
+  padding:10px 22px;border-radius:12px;font-family:'Lexend';font-weight:700;
+  transition:all .25s;box-shadow:0 4px 14px rgba(197,56,179,.35);
 }
-.nav-cta:hover{background:var(--cta-dark);transform:translateY(-1px)}
+.nav-cta:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(197,56,179,.5);filter:brightness(1.05)}
 
 /* ===== HERO ===== */
 .hero{
   min-height:100vh;display:flex;align-items:center;
   padding:120px 24px 60px;
   background:
-    radial-gradient(ellipse at top right,rgba(20,184,166,.12),transparent 50%),
-    radial-gradient(ellipse at bottom left,rgba(249,115,22,.08),transparent 50%),
+    radial-gradient(ellipse at top right,rgba(242,169,59,.18),transparent 55%),
+    radial-gradient(ellipse at bottom left,rgba(197,56,179,.14),transparent 55%),
     var(--bg);
   position:relative;overflow:hidden;
 }
 .hero::before{
   content:'';position:absolute;top:-100px;right:-100px;
   width:500px;height:500px;border-radius:50%;
-  background:radial-gradient(circle,rgba(20,184,166,.15),transparent 70%);
+  background:radial-gradient(circle,rgba(242,169,59,.22),transparent 70%);
   pointer-events:none;
 }
 .hero-inner{max-width:var(--maxw);margin:0 auto;display:grid;grid-template-columns:1.1fr .9fr;gap:60px;align-items:center;width:100%;position:relative;z-index:1}
 .hero-badge{
   display:inline-flex;align-items:center;gap:8px;
-  background:rgba(13,148,136,.10);color:var(--primary-dark);
+  background:rgba(197,56,179,.10);color:var(--primary-dark);
   padding:8px 18px;border-radius:999px;font-weight:600;font-size:.85rem;
-  margin-bottom:24px;border:1px solid rgba(13,148,136,.2);
+  margin-bottom:24px;border:1px solid rgba(197,56,179,.22);
 }
 .hero h1{font-size:3.6rem;font-weight:800;margin-bottom:20px;letter-spacing:-.02em}
 .hero h1 .accent{color:var(--cta)}
-.hero h1 .accent2{color:var(--primary)}
+.hero h1 .accent2{color:var(--secondary)}
 .hero .subtitle{font-size:1.25rem;color:var(--text-soft);margin-bottom:32px;max-width:540px}
 .hero-tags{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:36px}
 .hero-tag{
@@ -124,11 +130,11 @@ nav.scrolled{box-shadow:var(--shadow)}
 .hero-actions{display:flex;gap:16px;flex-wrap:wrap}
 .btn-primary{
   display:inline-flex;align-items:center;gap:10px;
-  background:var(--cta);color:#fff;text-decoration:none;
+  background:var(--grad-sunset);color:#1A1530;text-decoration:none;
   padding:16px 32px;border-radius:14px;font-family:'Lexend';font-weight:700;font-size:1.05rem;
-  transition:all .25s;box-shadow:0 4px 14px rgba(249,115,22,.35);cursor:pointer;border:none;
+  transition:all .25s;box-shadow:0 6px 20px rgba(197,56,179,.4);cursor:pointer;border:none;
 }
-.btn-primary:hover{background:var(--cta-dark);transform:translateY(-2px);box-shadow:0 6px 20px rgba(249,115,22,.4)}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 10px 28px rgba(197,56,179,.55);filter:brightness(1.06)}
 .btn-ghost{
   display:inline-flex;align-items:center;gap:10px;
   background:#fff;color:var(--primary-dark);text-decoration:none;
@@ -155,19 +161,20 @@ nav.scrolled{box-shadow:var(--shadow)}
 }
 .phone-header{
   padding:36px 16px 12px;display:flex;align-items:center;justify-content:space-between;
-  background:var(--primary);color:#fff;
+  background:var(--grad-sunset);color:#1A1530;
 }
-.phone-header .greeting{font-size:.75rem;opacity:.9}
-.phone-header .name{font-family:'Lexend';font-weight:700;font-size:1.1rem}
+.phone-header .greeting{font-size:.75rem;opacity:.85;font-weight:600}
+.phone-header .name{font-family:'Lexend';font-weight:800;font-size:1.1rem;color:#1A1530}
 .phone-header .lang-btn{
-  background:rgba(255,255,255,.2);border:none;color:#fff;
-  padding:4px 10px;border-radius:8px;font-size:.7rem;font-weight:600;cursor:pointer;
+  background:rgba(255,255,255,.3);border:none;color:#1A1530;
+  padding:4px 10px;border-radius:8px;font-size:.7rem;font-weight:700;cursor:pointer;
 }
 .phone-body{flex:1;padding:16px;overflow:hidden;display:flex;flex-direction:column;gap:10px}
 .phone-sos{
-  background:var(--danger);color:#fff;text-align:center;
-  padding:14px;border-radius:14px;font-family:'Lexend';font-weight:700;font-size:1rem;
+  background:linear-gradient(135deg,#EF4444,#C538B3);color:#fff;text-align:center;
+  padding:14px;border-radius:14px;font-family:'Lexend';font-weight:800;font-size:1rem;
   display:flex;align-items:center;justify-content:center;gap:8px;
+  box-shadow:0 6px 18px rgba(197,56,179,.4);
 }
 .phone-card{
   background:#fff;border:1px solid var(--border);border-radius:14px;padding:12px;
@@ -182,13 +189,13 @@ nav.scrolled{box-shadow:var(--shadow)}
 .phone-bubble{
   position:absolute;bottom:90px;right:16px;
   width:56px;height:56px;border-radius:50%;
-  background:linear-gradient(135deg,var(--cta),var(--cta-dark));
+  background:var(--grad-sunset);
   display:flex;align-items:center;justify-content:center;
-  box-shadow:0 6px 20px rgba(249,115,22,.4);
+  box-shadow:0 6px 20px rgba(197,56,179,.5);
   animation:pulse 2.5s infinite;
 }
-.phone-bubble svg{width:28px;height:28px;color:#fff}
-@keyframes pulse{0%,100%{box-shadow:0 6px 20px rgba(249,115,22,.4)}50%{box-shadow:0 6px 30px rgba(249,115,22,.6)}}
+.phone-bubble svg{width:28px;height:28px;color:#1A1530}
+@keyframes pulse{0%,100%{box-shadow:0 6px 20px rgba(197,56,179,.5)}50%{box-shadow:0 6px 30px rgba(242,169,59,.6)}}
 @keyframes statusPulse{0%,100%{opacity:1}50%{opacity:.4}}
 #status-dot.live{background:var(--safe);animation:statusPulse 2s infinite}
 #status-dot.down{background:var(--danger);animation:none}
@@ -238,18 +245,18 @@ section{padding:80px 24px;position:relative}
   color:rgba(13,148,136,.08);line-height:1;
 }
 
-/* color variants */
+/* color variants — sunset palette */
 .bg-primary{background:linear-gradient(135deg,var(--primary),var(--primary-dark))}
 .bg-cta{background:linear-gradient(135deg,var(--cta),var(--cta-dark))}
-.bg-gold{background:linear-gradient(135deg,#E0A82E,#D97706)}
-.bg-danger{background:linear-gradient(135deg,#EF4444,#DC2626)}
-.bg-purple{background:linear-gradient(135deg,#8B5CF6,#6D28D9)}
-.bg-blue{background:linear-gradient(135deg,#3B82F6,#1D4ED8)}
-.bg-green{background:linear-gradient(135deg,#22C55E,#15803D)}
-.bg-teal{background:linear-gradient(135deg,#2DD4BF,#0D9488)}
-.bg-rose{background:linear-gradient(135deg,#FB7185,#E11D48)}
-.bg-indigo{background:linear-gradient(135deg,#6366F1,#4338CA)}
-.bg-amber{background:linear-gradient(135deg,#FBBF24,#D97706)}
+.bg-gold{background:linear-gradient(135deg,#F2A93B,#E88D56)}
+.bg-danger{background:linear-gradient(135deg,#EF4444,#C538B3)}
+.bg-purple{background:linear-gradient(135deg,#C538B3,#7B2D8B)}
+.bg-blue{background:linear-gradient(135deg,#E88D56,#C538B3)}
+.bg-green{background:linear-gradient(135deg,#F2A93B,#22C55E)}
+.bg-teal{background:linear-gradient(135deg,#E88D56,#C538B3)}
+.bg-rose{background:linear-gradient(135deg,#FB7185,#C538B3)}
+.bg-indigo{background:linear-gradient(135deg,#C538B3,#7B2D8B)}
+.bg-amber{background:linear-gradient(135deg,#F2A93B,#E88D56)}
 
 /* ===== ARCHITECTURE ===== */
 .arch-section{background:linear-gradient(180deg,var(--bg),#fff)}
@@ -457,7 +464,7 @@ footer{background:var(--text);color:rgba(255,255,255,.7);padding:60px 24px 40px}
 <!-- ===== NAV ===== -->
 <nav id="navbar">
   <div class="nav-brand">
-    <svg viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="18" fill="url(#lg1)"/><defs><linearGradient id="lg1" x1="0" y1="0" x2="40" y2="40"><stop stop-color="#0D9488"/><stop offset="1" stop-color="#F97316"/></linearGradient></defs><path d="M20 9v22M9 20h22" stroke="#fff" stroke-width="3" stroke-linecap="round"/><circle cx="20" cy="20" r="6" fill="#fff" opacity=".3"/><circle cx="20" cy="20" r="3" fill="#fff"/></svg>
+    <svg viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="18" fill="url(#lg1)"/><defs><linearGradient id="lg1" x1="0" y1="0" x2="40" y2="40"><stop stop-color="#F2A93B"/><stop offset="1" stop-color="#7B2D8B"/></linearGradient></defs><path d="M20 9v22M9 20h22" stroke="#fff" stroke-width="3" stroke-linecap="round"/><circle cx="20" cy="20" r="6" fill="#fff" opacity=".3"/><circle cx="20" cy="20" r="3" fill="#fff"/></svg>
     <span>银龄智伴（GoldenAge AI）</span>
   </div>
   <div class="nav-links">
@@ -486,7 +493,7 @@ footer{background:var(--text);color:rgba(255,255,255,.7);padding:60px 24px 40px}
         <span id="status-text" data-zh="检查服务状态…" data-en="Checking status…">检查服务状态…</span>
       </div>
       <h1>
-        <span class="accent2">银龄智伴</span> <span class="accent">（GoldenAge AI）</span><br>
+        <span class="accent2">银龄智伴</span> <span class="accent">（GoldenAge AI）</span>
         <span data-zh="银龄智伴 · 长者智能伴侣" data-en="Companion for Seniors">银龄智伴 · 长者智能伴侣</span>
       </h1>
       <p class="subtitle" data-zh="一款充满同理心的AI伴侣应用，用极简界面连接复杂的数字世界——专为安卓和电脑端的长者用户打造，基于Supabase、pgvector和大语言模型智能体。" data-en="A deeply empathetic AI companion app that bridges complex digital tasks with ultra-simplified interfaces — built specifically for elderly users on Android &amp; PC, powered by Supabase, pgvector &amp; LLM agents.">
@@ -927,7 +934,7 @@ footer{background:var(--text);color:rgba(255,255,255,.7);padding:60px 24px 40px}
   <div class="footer-inner">
     <div class="footer-brand-text">
       <div class="footer-brand">
-        <svg viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="18" fill="url(#lg2)"/><defs><linearGradient id="lg2" x1="0" y1="0" x2="40" y2="40"><stop stop-color="#0D9488"/><stop offset="1" stop-color="#F97316"/></linearGradient></defs><path d="M20 9v22M9 20h22" stroke="#fff" stroke-width="3" stroke-linecap="round"/><circle cx="20" cy="20" r="6" fill="#fff" opacity=".3"/><circle cx="20" cy="20" r="3" fill="#fff"/></svg>
+        <svg viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="18" fill="url(#lg2)"/><defs><linearGradient id="lg2" x1="0" y1="0" x2="40" y2="40"><stop stop-color="#F2A93B"/><stop offset="1" stop-color="#7B2D8B"/></linearGradient></defs><path d="M20 9v22M9 20h22" stroke="#fff" stroke-width="3" stroke-linecap="round"/><circle cx="20" cy="20" r="6" fill="#fff" opacity=".3"/><circle cx="20" cy="20" r="3" fill="#fff"/></svg>
         <span>银龄智伴（GoldenAge AI）</span>
       </div>
       <p data-zh="一款智能伴侣应用，用极简界面连接复杂的数字世界，专为长者用户打造。基于Flutter、Supabase和大语言模型智能体。" data-en="A companion-driven application that bridges complex digital tasks with ultra-simplified interfaces for elderly users. Powered by Flutter, Supabase &amp; LLM agents.">一款智能伴侣应用，用极简界面连接复杂的数字世界，专为长者用户打造。基于Flutter、Supabase和大语言模型智能体。</p>

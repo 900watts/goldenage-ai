@@ -1372,84 +1372,80 @@ function renderAuth(root) {
       <button class="big-btn ghost" id="switchAccountBtn" style="width:auto;min-width:0;padding:8px 14px;font-size:.85rem;background:transparent;border:1px solid var(--border-app);color:var(--text)">${isZh?'切换':'Switch'}</button>
     </div>
     ` : ''}
-    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 24px;text-align:center;width:100%;min-height:100%">
-      <div style="width:96px;height:96px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--cta));display:flex;align-items:center;justify-content:center;margin-bottom:24px">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="white"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+    <div class="auth-shell">
+      <div class="auth-brand">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="white"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
       </div>
-      <h2 style="margin-bottom:8px">${t('authTitle')}</h2>
-      <p class="text-soft" style="margin-bottom:20px">${t('authSubtitle')}</p>
+      <h2 class="auth-title">${t('authTitle')}</h2>
+      <p class="text-soft auth-sub">${t('authSubtitle')}</p>
 
-      <div style="display:inline-flex;background:var(--bg);border:1px solid var(--border-app);border-radius:12px;padding:4px;margin-bottom:20px;flex-wrap:wrap;gap:2px;justify-content:center">
-        <button id="tabPhone" class="big-btn ${tab==='phone'?'primary':'ghost'}" style="width:auto;min-width:0;padding:10px 14px;font-size:.9rem;min-height:40px">${isZh?'手机':'Phone'}</button>
-        <button id="tabEmail" class="big-btn ${tab==='email'?'primary':'ghost'}" style="width:auto;min-width:0;padding:10px 14px;font-size:.9rem;min-height:40px">${isZh?'邮箱':'Email'}</button>
-        <button id="tabPwd" class="big-btn ${tab==='pwd'?'primary':'ghost'}" style="width:auto;min-width:0;padding:10px 14px;font-size:.9rem;min-height:40px">${isZh?'密码':'Password'}</button>
+      <div class="auth-tabs">
+        <button id="tabPhone" class="auth-tab ${tab==='phone'?'active':''}">${isZh?'手机':'Phone'}</button>
+        <button id="tabEmail" class="auth-tab ${tab==='email'?'active':''}">${isZh?'邮箱':'Email'}</button>
+        <button id="tabPwd" class="auth-tab ${tab==='pwd'?'active':''}">${isZh?'密码':'Password'}</button>
       </div>
 
       ${otpMode ? (tab === 'email' ? `
-        <div style="width:100%;text-align:center">
-          <div style="width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--secondary));margin:0 auto 18px;display:flex;align-items:center;justify-content:center">
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+        <div class="auth-field" style="text-align:center">
+          <div style="width:64px;height:64px;border-radius:18px;background:linear-gradient(135deg,var(--primary),var(--secondary));margin:0 auto 16px;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 20px -6px rgba(13,148,136,.45)">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
           </div>
-          <h3 style="margin-bottom:10px">${t('authLinkSentTitle')}</h3>
-          <p class="text-soft" style="margin-bottom:6px;line-height:1.55">${t('authLinkSentSub').replace('${email}', '<b>'+escapeHtml(renderAuth._email||'')+'</b>')}</p>
-          <p class="text-soft" style="font-size:.85rem;margin-bottom:18px">${t('authLinkSentHint')}</p>
+          <h3 style="margin:0 0 8px">${t('authLinkSentTitle')}</h3>
+          <p class="text-soft" style="margin:0 0 6px;line-height:1.55;font-size:.92rem">${t('authLinkSentSub').replace('${email}', '<b>'+escapeHtml(renderAuth._email||'')+'</b>')}</p>
+          <p class="auth-hint" style="margin:0 0 16px">${t('authLinkSentHint')}</p>
           <div class="text-soft" style="font-size:.85rem;margin-bottom:14px;display:flex;align-items:center;justify-content:center;gap:6px">
             <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--primary);animation:pulse 1.4s infinite"></span>
             ${t('authLinkWaiting')}
           </div>
-          <button class="big-btn ghost" id="resendLinkBtn" style="width:100%;min-width:0">${t('authLinkResend')}</button>
-          <div style="height:10px"></div>
-          <button class="big-btn ghost" id="changeEmailBtn" style="width:100%;min-width:0;background:transparent;border:0">${t('authLinkChange')}</button>
+          <button class="big-btn auth-cta ghost" id="resendLinkBtn">${t('authLinkResend')}</button>
+          <div style="height:8px"></div>
+          <button class="big-btn auth-cta ghost" id="changeEmailBtn" style="background:transparent !important;border:0 !important;color:var(--muted-app) !important;font-weight:500 !important">${t('authLinkChange')}</button>
         </div>
       ` : `
-        <div style="width:100%">
-          <p class="text-soft" style="margin-bottom:16px">${t('authOtpSubPhone')}</p>
-          <label class="field-label">${t('authOtpTitle')}</label>
-          <input id="otpInput" inputmode="numeric" maxlength="8" style="letter-spacing:6px;font-size:1.5rem;font-weight:700;text-align:center" placeholder="······">
-          <div style="height:16px"></div>
-          <button class="big-btn primary" id="verifyBtn">${t('authVerify')}</button>
-          <div style="height:12px"></div>
-          <div class="text-soft" id="resendWrap" style="font-size:.95rem">${t('authResendIn')} <span id="resendSec">60</span>s</div>
+        <div class="auth-field">
+          <p class="text-soft" style="margin:0 0 14px;font-size:.92rem">${t('authOtpSubPhone')}</p>
+          <label class="auth-label">${t('authOtpTitle')}</label>
+          <input id="otpInput" class="auth-input" inputmode="numeric" maxlength="8" style="letter-spacing:6px;font-size:1.4rem;font-weight:700;text-align:center" placeholder="······">
+          <div style="height:14px"></div>
+          <button class="big-btn primary auth-cta" id="verifyBtn">${t('authVerify')}</button>
+          <div class="text-soft" id="resendWrap" style="font-size:.9rem;margin-top:12px;text-align:center">${t('authResendIn')} <span id="resendSec">60</span>s</div>
         </div>
       `) : pwdMode ? `
-        <div style="width:100%;text-align:left">
-          <h3 style="margin:0 0 6px;text-align:center">${renderAuth._pwdMode === 'up' ? (isZh?'创建账户':'Create Account') : (isZh?'登录账户':'Sign In')}</h3>
-          <p class="text-soft" style="margin:0 0 18px;text-align:center;font-size:.9rem">${renderAuth._pwdMode === 'up' ? (isZh?'使用邮箱 + 密码，1 秒开始':'Set a password — no email verification needed') : (isZh?'欢迎回来':'Welcome back')}</p>
-          <label class="field-label">${isZh?'邮箱地址':'Email address'}</label>
-          <input id="pwdEmail" type="email" autocomplete="email" style="font-size:1.1rem;padding:14px 16px" placeholder="you@example.com">
-          <div style="height:14px"></div>
-          <label class="field-label">${isZh?'密码（至少 6 位）':'Password (6+ characters)'}</label>
-          <input id="pwdInput" type="password" autocomplete="${renderAuth._pwdMode==='up'?'new-password':'current-password'}" style="font-size:1.1rem;padding:14px 16px;letter-spacing:2px" placeholder="${renderAuth._pwdMode==='up' ? (isZh?'设置一个密码（≥6位）':'Set a password (6+ chars)') : (isZh?'输入密码':'Enter password')}">
-          <div style="height:20px"></div>
-          <button class="big-btn primary" id="pwdSignUpBtn" style="width:100%;min-width:0;background:linear-gradient(135deg,var(--primary),var(--cta));color:#fff;font-weight:700;font-size:1.05rem">${isZh?'注册 / Sign Up':'Sign Up'}</button>
-          <div style="height:10px"></div>
-          <button class="big-btn ghost" id="pwdSignInBtn" style="width:100%;min-width:0;border:1px solid var(--border-app);background:var(--bg);font-weight:600;font-size:1rem">${isZh?'登录 / Sign In':'Sign In'}</button>
-          <div style="height:14px"></div>
-          <div style="text-align:center;font-size:.88rem;color:var(--text-soft,#666)">
-            <span id="pwdToggleLink" style="cursor:pointer;text-decoration:underline;color:var(--primary)">${renderAuth._pwdMode === 'up' ? (isZh?'已有账户？直接登录':'Already have an account? Sign In') : (isZh?'还没账户？立即注册（无需邮箱验证）':'New here? Create an account (no email verify)')}</span>
-          </div>
+        <div class="auth-field" style="text-align:left">
+          <h3 style="margin:0 0 4px;text-align:center;font-size:1.2rem">${renderAuth._pwdMode === 'up' ? (isZh?'创建账户':'Create Account') : (isZh?'登录账户':'Sign In')}</h3>
+          <p class="text-soft" style="margin:0 0 16px;text-align:center;font-size:.88rem">${renderAuth._pwdMode === 'up' ? (isZh?'使用邮箱 + 密码':'Set a password — no verification needed') : (isZh?'欢迎回来':'Welcome back')}</p>
+          <label class="auth-label">${isZh?'邮箱地址':'Email address'}</label>
+          <input id="pwdEmail" class="auth-input" type="email" autocomplete="email" placeholder="you@example.com">
+          <div style="height:12px"></div>
+          <label class="auth-label">${isZh?'密码（至少 6 位）':'Password (6+ characters)'}</label>
+          <input id="pwdInput" class="auth-input" type="password" autocomplete="${renderAuth._pwdMode==='up'?'new-password':'current-password'}" style="letter-spacing:2px" placeholder="${renderAuth._pwdMode==='up' ? (isZh?'设置密码（≥6位）':'Set a password (6+ chars)') : (isZh?'输入密码':'Enter password')}">
+          <div style="height:18px"></div>
+          <button class="big-btn primary auth-cta" id="pwdSignUpBtn" style="background:linear-gradient(135deg,var(--primary),var(--cta)) !important">${isZh?'注册 / Sign Up':'Sign Up'}</button>
           <div style="height:8px"></div>
-          <p class="text-soft" style="font-size:.74rem;line-height:1.5;text-align:center;margin:0">${isZh?'密码经 Supabase Auth 散列存储（bcrypt）。':'Passwords are stored hashed (bcrypt) by Supabase Auth.'}</p>
+          <button class="big-btn auth-cta ghost" id="pwdSignInBtn">${isZh?'登录 / Sign In':'Sign In'}</button>
+          <div style="text-align:center;font-size:.88rem;color:var(--text-soft-app);margin-top:14px">
+            <span id="pwdToggleLink" style="cursor:pointer;color:var(--primary);font-weight:600">${renderAuth._pwdMode === 'up' ? (isZh?'已有账户？直接登录':'Already have an account? Sign In') : (isZh?'还没账户？立即注册（无需邮箱验证）':'New here? Create an account (no email verify)')}</span>
+          </div>
+          <p class="auth-hint" style="text-align:center;margin-top:8px">${isZh?'密码经 Supabase Auth 散列存储':'Passwords are stored hashed by Supabase Auth'}</p>
         </div>
       ` : (tab === 'phone' ? `
-        <div style="width:100%">
-          <label class="field-label">${t('authPhoneLabel')}</label>
-          <input id="phoneInput" maxlength="20" style="font-size:1.3rem" placeholder="${t('authPlaceholder')}">
-          <p class="text-soft" style="margin-top:6px;font-size:.85rem">${t('authPhoneHint')}</p>
-          <div style="height:16px"></div>
-          <button class="big-btn primary" id="sendBtn">${t('authSend')}</button>
+        <div class="auth-field">
+          <label class="auth-label">${t('authPhoneLabel')}</label>
+          <input id="phoneInput" class="auth-input" maxlength="20" placeholder="${t('authPlaceholder')}">
+          <p class="auth-hint">${t('authPhoneHint')}</p>
+          <div style="height:14px"></div>
+          <button class="big-btn primary auth-cta" id="sendBtn">${t('authSend')}</button>
         </div>
       ` : `
-        <div style="width:100%">
-          <label class="field-label">${isZh?'邮箱地址':'Email address'}</label>
-          <input id="emailInput" type='email' autocomplete='email' style="font-size:1.3rem" placeholder="you@example.com">
-          <p class="text-soft" style="margin-top:6px;font-size:.85rem">${t('authSmsHint')}</p>
-          <div style="height:16px"></div>
-          <button class="big-btn primary" id="sendEmailBtn">${t('authSend')}</button>
-          <div style="height:20px"></div>
-          <div style="display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--border-app);border-radius:12px;padding:12px;text-align:left">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-            <span style="font-size:.85rem">${isZh?'推荐使用邮箱登录（我们会向您邮箱发送 6 位验证码）':'Email login sends a 6-digit code to your inbox — no SMS provider needed'}</span>
+        <div class="auth-field">
+          <label class="auth-label">${isZh?'邮箱地址':'Email address'}</label>
+          <input id="emailInput" class="auth-input" type='email' autocomplete='email' placeholder="you@example.com">
+          <p class="auth-hint">${t('authSmsHint')}</p>
+          <div style="height:14px"></div>
+          <button class="big-btn primary auth-cta" id="sendEmailBtn">${t('authSend')}</button>
+          <div class="auth-note">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+            <span style="font-size:.82rem;line-height:1.45">${isZh?'推荐邮箱登录，6 位验证码直达收件箱':'Email login sends a 6-digit code — no SMS provider needed'}</span>
           </div>
         </div>
       `)}

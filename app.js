@@ -1347,198 +1347,260 @@ function render() {
 }
 
 // --- AUTH ---
+// Sunset-on-navy login. Instant tab switching (swap form slot only, no full
+// re-render). Email fields run a best-effort existence check; new users fall
+// through the existing finishSignIn -> setup wizard path.
+function authStatusEl(kind, text) {
+  if (!text) return "";
+  return `<div class="auth-status ${kind}" id="authStatus"><span class="dot"></span>${escapeHtml(text)}</div>`;
+}
+function authIsEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((v||"").trim()); }
+async function authCheckEmail(email) {
+  if (!sb || !authIsEmail(email)) return null;
+  try {
+    const { data, error } = await sb.from("profiles")
+      .select("id, setup_complete")
+      .ilike("email", email)
+      .limit(1)
+      .maybeSingle();
+    if (error) return null;
+    if (!data) return "new";
+    return data.setup_complete ? "returning" : "new";
+  } catch (_) { return null; }
+}
+let _authEmailCheckT = null;
+function scheduleAuthEmailCheck(email) {
+  if (_authEmailCheckT) clearTimeout(_authEmailCheckT);
+  const slot = document.getElementById("authStatus");
+  if (slot) slot.outerHTML = authStatusEl("checking", state.lang === "zh" ? "正在检测账户…" : "Checking account…");
+  _authEmailCheckT = setTimeout(async () => {
+    const res = await authCheckEmail(email);
+    const live = document.getElementById("authStatus");
+    if (!live) return;
+    if (res === "returning") live.outerHTML = authStatusEl("returning", state.lang === "zh" ? "欢迎回来 ✓" : "Welcome back ✓");
+    else if (res === "new")   live.outerHTML = authStatusEl("new",       state.lang === "zh" ? "看起来您是新用户 — 我们会帮您完成设置" : "Looks new — we will set you up");
+    else live.remove();
+  }, 600);
+}
+
 function renderAuth(root) {
-  const isZh = state.lang === 'zh';
-  const screen = renderAuth._screen || 'input';
-  const tab = renderAuth._tab || 'email';
+  const isZh = state.lang === "zh";
+  const screen = renderAuth._screen || "input";
+  const tab = renderAuth._tab || "email";
 
-  // ---- New-user profile setup ----
-  if (screen === 'profile') { renderAuthSetup(root, isZh); return; }
+  if (screen === "profile") { renderAuthSetup(root, isZh); return; }
 
-  const otpMode = screen === 'otp';
-  const pwdMode = screen === 'pwd';
   const signedInEmail = renderAuth._signedInEmail;
   root.innerHTML = `
-    ${signedInEmail ? `
-    <div class="card" style="width:100%;max-width:480px;padding:14px 18px;margin-bottom:18px;background:var(--bg);display:flex;align-items:center;gap:12px;border:1px solid var(--border-app)">
-      <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--cta));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700">
-        ${escapeHtml(signedInEmail[0] || '?').toUpperCase()}
+    <div class="auth-stage">
+      ${signedInEmail ? `
+      <div class="card" style="position:relative;z-index:2;width:100%;max-width:380px;padding:12px 16px;margin-bottom:18px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.10);border-radius:18px;display:flex;align-items:center;gap:12px">
+        <div style="width:36px;height:36px;border-radius:50%;background:var(--grad-sunset);color:#1A1530;display:flex;align-items:center;justify-content:center;font-weight:700">
+          ${escapeHtml(signedInEmail[0] || "?").toUpperCase()}
+        </div>
+        <div style="flex:1;text-align:left;min-width:0">
+          <div style="font-size:.78rem;color:rgba(251,238,219,.55)">${isZh?"已登录":"Already signed in as"}</div>
+          <div style="font-size:.95rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#FBEEDB">${escapeHtml(signedInEmail)}</div>
+        </div>
+        <button id="continueCurrentBtn" class="auth-cta" style="width:auto;min-width:0;padding:8px 16px;font-size:.85rem">${isZh?"进入":"Continue"}</button>
+        <button id="switchAccountBtn" class="auth-cta ghost" style="width:auto;min-width:0;padding:8px 12px;font-size:.82rem">${isZh?"切换":"Switch"}</button>
       </div>
-      <div style="flex:1;text-align:left;min-width:0">
-        <div style="font-size:.78rem;color:var(--muted)">${isZh?'已登录':'Already signed in as'}</div>
-        <div style="font-size:.95rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(signedInEmail)}</div>
+      ` : ""}
+      <div class="auth-shell">
+        <div class="auth-brand">
+          <img src="assets/logo.png" alt="GoldenAge AI" width="72" height="72">
+        </div>
+        <h2 class="auth-title">${t("authTitle")}</h2>
+        <p class="auth-sub">${t("authSubtitle")}</p>
+
+        <div class="auth-tabs" id="authTabs">
+          <button class="auth-tab ${tab==="phone"?"active":""}" data-tab="phone">${isZh?"手机":"Phone"}</button>
+          <button class="auth-tab ${tab==="email"?"active":""}" data-tab="email">${isZh?"邮箱":"Email"}</button>
+          <button class="auth-tab ${tab==="pwd"?"active":""}" data-tab="pwd">${isZh?"密码":"Password"}</button>
+        </div>
+
+        <div id="authFormSlot">${authFormInner(tab, screen, isZh)}</div>
       </div>
-      <button class="big-btn primary" id="continueCurrentBtn" style="width:auto;min-width:0;padding:8px 16px;font-size:.9rem">${isZh?'进入应用':'Continue'}</button>
-      <button class="big-btn ghost" id="switchAccountBtn" style="width:auto;min-width:0;padding:8px 14px;font-size:.85rem;background:transparent;border:1px solid var(--border-app);color:var(--text)">${isZh?'切换':'Switch'}</button>
+      <div class="auth-foot">GoldenAge AI · ${isZh?"长者友好 · 隐私保护":"Elder-friendly · Privacy first"}</div>
     </div>
-    ` : ''}
-    <div class="auth-shell">
-      <div class="auth-brand">
-        <img src="assets/logo.png" alt="GoldenAge AI" width="64" height="64">
-      </div>
-      <h2 class="auth-title">${t('authTitle')}</h2>
-      <p class="text-soft auth-sub">${t('authSubtitle')}</p>
+  `;
 
-      <div class="auth-tabs">
-        <button id="tabPhone" class="auth-tab ${tab==='phone'?'active':''}">${isZh?'手机':'Phone'}</button>
-        <button id="tabEmail" class="auth-tab ${tab==='email'?'active':''}">${isZh?'邮箱':'Email'}</button>
-        <button id="tabPwd" class="auth-tab ${tab==='pwd'?'active':''}">${isZh?'密码':'Password'}</button>
-      </div>
+  bindAuthForm();
+}
 
-      ${otpMode ? (tab === 'email' ? `
-        <div class="auth-field" style="text-align:center">
-          <div style="width:64px;height:64px;border-radius:18px;background:linear-gradient(135deg,var(--primary),var(--secondary));margin:0 auto 16px;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 20px -6px rgba(13,148,136,.45)">
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-          </div>
-          <h3 style="margin:0 0 8px">${t('authLinkSentTitle')}</h3>
-          <p class="text-soft" style="margin:0 0 6px;line-height:1.55;font-size:.92rem">${t('authLinkSentSub').replace('${email}', '<b>'+escapeHtml(renderAuth._email||'')+'</b>')}</p>
-          <p class="auth-hint" style="margin:0 0 16px">${t('authLinkSentHint')}</p>
-          <div class="text-soft" style="font-size:.85rem;margin-bottom:14px;display:flex;align-items:center;justify-content:center;gap:6px">
-            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--primary);animation:pulse 1.4s infinite"></span>
-            ${t('authLinkWaiting')}
-          </div>
-          <button class="big-btn auth-cta ghost" id="resendLinkBtn">${t('authLinkResend')}</button>
-          <div style="height:8px"></div>
-          <button class="big-btn auth-cta ghost" id="changeEmailBtn" style="background:transparent !important;border:0 !important;color:var(--muted-app) !important;font-weight:500 !important">${t('authLinkChange')}</button>
+function authFormInner(tab, screen, isZh) {
+  const otpMode = screen === "otp";
+  const pwdMode = screen === "pwd";
+  if (otpMode) {
+    if (tab === "email") return `
+      <div class="auth-field" style="text-align:center">
+        <div style="width:64px;height:64px;border-radius:18px;background:var(--grad-sunset);margin:0 auto 16px;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 22px -8px rgba(197,56,179,.6)">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#1A1530" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
         </div>
-      ` : `
-        <div class="auth-field">
-          <p class="text-soft" style="margin:0 0 14px;font-size:.92rem">${t('authOtpSubPhone')}</p>
-          <label class="auth-label">${t('authOtpTitle')}</label>
-          <input id="otpInput" class="auth-input" inputmode="numeric" maxlength="8" style="letter-spacing:6px;font-size:1.4rem;font-weight:700;text-align:center" placeholder="······">
-          <div style="height:14px"></div>
-          <button class="big-btn primary auth-cta" id="verifyBtn">${t('authVerify')}</button>
-          <div class="text-soft" id="resendWrap" style="font-size:.9rem;margin-top:12px;text-align:center">${t('authResendIn')} <span id="resendSec">60</span>s</div>
+        <h3 style="margin:0 0 8px;color:#FBEEDB">${t("authLinkSentTitle")}</h3>
+        <p class="auth-hint" style="margin:0 0 6px">${t("authLinkSentSub").replace("${email}", "<b style=\"color:#FBEEDB\">"+escapeHtml(renderAuth._email||"")+"</b>")}</p>
+        <p class="auth-hint" style="margin:0 0 16px">${t("authLinkSentHint")}</p>
+        <div class="auth-hint" style="font-size:.85rem;margin-bottom:14px;display:flex;align-items:center;justify-content:center;gap:6px">
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#F2A93B;animation:pulse 1.4s infinite"></span>
+          ${t("authLinkWaiting")}
         </div>
-      `) : pwdMode ? `
-        <div class="auth-field" style="text-align:left">
-          <h3 style="margin:0 0 4px;text-align:center;font-size:1.2rem">${renderAuth._pwdMode === 'up' ? (isZh?'创建账户':'Create Account') : (isZh?'登录账户':'Sign In')}</h3>
-          <p class="text-soft" style="margin:0 0 16px;text-align:center;font-size:.88rem">${renderAuth._pwdMode === 'up' ? (isZh?'使用邮箱 + 密码':'Set a password — no verification needed') : (isZh?'欢迎回来':'Welcome back')}</p>
-          <label class="auth-label">${isZh?'邮箱 / 用户名':'Email / Username'}</label>
-          <input id="pwdEmail" class="auth-input auth-pill" type="email" autocomplete="username" placeholder="${isZh?'邮箱或用户名':'email or username'}">
-          <div style="height:12px"></div>
-          <label class="auth-label">${isZh?'密码':'Password'}</label>
-          <input id="pwdInput" class="auth-input auth-pill" type="password" autocomplete="${renderAuth._pwdMode==='up'?'new-password':'current-password'}" style="letter-spacing:2px" placeholder="${renderAuth._pwdMode==='up' ? (isZh?'设置密码（≥6位）':'Set a password (6+ chars)') : (isZh?'输入密码':'Enter password')}">
-          <div style="height:18px"></div>
-          <button class="big-btn primary auth-cta" id="pwdPrimaryBtn" style="background:linear-gradient(135deg,var(--primary),var(--cta)) !important">${isZh?'登录 / Sign In':'Sign In'}</button>
-          <div style="text-align:center;font-size:.88rem;color:var(--text-soft-app);margin-top:14px">
-            <span id="pwdToggleLink" style="cursor:pointer;color:var(--primary);font-weight:600">${renderAuth._pwdMode === 'up' ? (isZh?'已有账户？直接登录':'Already have an account? Sign In') : (isZh?'还没账户？立即注册（无需邮箱验证）':'New here? Create an account (no email verify)')}</span>
-          </div>
-          <p class="auth-hint" id="pwdEmailNote" style="text-align:center;margin-top:8px;display:none">${isZh?'检测到邮箱 — 点击将发送登录链接':'Email detected — button sends a sign-in link'}</p>
-          <p class="auth-hint" style="text-align:center;margin-top:6px">${isZh?'密码经 Supabase Auth 散列存储':'Passwords are stored hashed by Supabase Auth'}</p>
+        <button class="auth-cta ghost" id="resendLinkBtn">${t("authLinkResend")}</button>
+        <div style="height:8px"></div>
+        <button class="auth-cta ghost" id="changeEmailBtn" style="background:transparent !important;border:0 !important;color:rgba(251,238,219,.5) !important;font-weight:500 !important;box-shadow:none">${t("authLinkChange")}</button>
+      </div>`;
+    return `
+      <div class="auth-field">
+        <p class="auth-hint" style="margin:0 0 14px;text-align:left">${t("authOtpSubPhone")}</p>
+        <label class="auth-label">${t("authOtpTitle")}</label>
+        <input id="otpInput" class="auth-input" inputmode="numeric" maxlength="8" style="letter-spacing:6px;font-size:1.4rem;font-weight:700;text-align:center" placeholder="······">
+        <div style="height:14px"></div>
+        <button class="auth-cta" id="verifyBtn">${t("authVerify")}</button>
+        <div class="auth-hint" id="resendWrap" style="font-size:.9rem;margin-top:12px;text-align:center">${t("authResendIn")} <span id="resendSec">60</span>s</div>
+      </div>`;
+  }
+  if (pwdMode) {
+    return `
+      <div class="auth-field" style="text-align:left">
+        <h3 style="margin:0 0 4px;text-align:center;font-size:1.2rem;color:#FBEEDB">${renderAuth._pwdMode === "up" ? (isZh?"创建账户":"Create Account") : (isZh?"登录账户":"Sign In")}</h3>
+        <p class="auth-hint" style="margin:0 0 16px;text-align:center">${renderAuth._pwdMode === "up" ? (isZh?"使用邮箱 + 密码":"Set a password — no verification needed") : (isZh?"欢迎回来 · 邮箱或用户名皆可":"Welcome back · email or username")}</p>
+        <label class="auth-label">${isZh?"邮箱 / 用户名":"Email / Username"}</label>
+        <input id="pwdEmail" class="auth-input" type="email" autocomplete="username" placeholder="${isZh?"邮箱或用户名":"email or username"}">
+        <div id="authStatusWrap" style="min-height:18px;margin-top:6px">${renderAuth._pwdMode==="in" ? authStatusEl("checking", isZh?"输入邮箱即可检测账户":"Type your email to check") : ""}</div>
+        <div style="height:6px"></div>
+        <label class="auth-label">${isZh?"密码":"Password"}</label>
+        <input id="pwdInput" class="auth-input" type="password" autocomplete="${renderAuth._pwdMode==="up"?"new-password":"current-password"}" style="letter-spacing:2px" placeholder="${renderAuth._pwdMode === "up" ? (isZh?"设置密码（≥6位）":"Set a password (6+ chars)") : (isZh?"输入密码":"Enter password")}">
+        <div style="height:18px"></div>
+        <button class="auth-cta" id="pwdPrimaryBtn">${isZh?"登录 / Sign In":"Sign In"}</button>
+        <div class="auth-toggle">
+          <span id="pwdToggleLink">${renderAuth._pwdMode === "up" ? (isZh?"已有账户？直接登录":"Already have an account? Sign In") : (isZh?"还没账户？立即注册（无需邮箱验证）":"New here? Create an account (no email verify)")}</span>
         </div>
-      ` : (tab === 'phone' ? `
-        <div class="auth-field">
-          <label class="auth-label">${t('authPhoneLabel')}</label>
-          <input id="phoneInput" class="auth-input" maxlength="20" placeholder="${t('authPlaceholder')}">
-          <p class="auth-hint">${t('authPhoneHint')}</p>
-          <div style="height:14px"></div>
-          <button class="big-btn primary auth-cta" id="sendBtn">${t('authSend')}</button>
-        </div>
-      ` : `
-        <div class="auth-field">
-          <label class="auth-label">${isZh?'邮箱地址':'Email address'}</label>
-          <input id="emailInput" class="auth-input" type='email' autocomplete='email' placeholder="you@example.com">
-          <p class="auth-hint">${t('authSmsHint')}</p>
-          <div style="height:14px"></div>
-          <button class="big-btn primary auth-cta" id="sendEmailBtn">${t('authSend')}</button>
-          <div class="auth-note">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-            <span style="font-size:.82rem;line-height:1.45">${isZh?'推荐邮箱登录，6 位验证码直达收件箱':'Email login sends a 6-digit code — no SMS provider needed'}</span>
-          </div>
-        </div>
-      `)}
+      </div>`;
+  }
+  if (tab === "phone") return `
+    <div class="auth-field">
+      <label class="auth-label">${t("authPhoneLabel")}</label>
+      <input id="phoneInput" class="auth-input" maxlength="20" placeholder="${t("authPlaceholder")}">
+      <p class="auth-hint">${t("authPhoneHint")}</p>
+      <div style="height:14px"></div>
+      <button class="auth-cta" id="sendBtn">${t("authSend")}</button>
     </div>`;
+  return `
+    <div class="auth-field">
+      <label class="auth-label">${isZh?"邮箱地址":"Email address"}</label>
+      <input id="emailInput" class="auth-input" type="email" autocomplete="email" placeholder="you@example.com">
+      <div id="authStatusWrap" style="min-height:18px;margin-top:6px">${authStatusEl("checking", isZh?"输入邮箱即可检测账户":"Type your email to check")}</div>
+      <p class="auth-hint">${t("authSmsHint")}</p>
+      <div style="height:14px"></div>
+      <button class="auth-cta" id="sendEmailBtn">${t("authSend")}</button>
+      <div class="auth-note">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F2A93B" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+        <span style="font-size:.82rem;line-height:1.45;color:rgba(251,238,219,.75)">${isZh?"推荐邮箱登录，链接直达收件箱":"Email login sends a sign-in link to your inbox"}</span>
+      </div>
+    </div>`;
+}
 
-  // Tab switching
-  const tabPhone = document.getElementById('tabPhone');
-  const tabEmail = document.getElementById('tabEmail');
-  const tabPwd = document.getElementById('tabPwd');
-  if (tabPhone) tabPhone.onclick = () => { renderAuth._tab = 'phone'; renderAuth._screen = 'input'; render(); };
-  if (tabEmail) tabEmail.onclick = () => { renderAuth._tab = 'email'; renderAuth._screen = 'input'; render(); };
-  if (tabPwd) tabPwd.onclick = () => {
-    renderAuth._tab = 'pwd';
-    renderAuth._screen = 'pwd';
-    if (!renderAuth._pwdMode) renderAuth._pwdMode = 'in'; // default to Sign In
-    render();
-  };
+function bindAuthForm() {
+  const isZh = state.lang === "zh";
+  const screen = renderAuth._screen || "input";
+  const tab = renderAuth._tab || "email";
 
-  // "Continue" / "Switch account" — only shown when ?login=1 forced
-  // the auth screen even though a session is already present.
-  const cont = document.getElementById('continueCurrentBtn');
+  // Tab switching — instant swap of the form slot, no full re-render
+  document.querySelectorAll("#authTabs .auth-tab").forEach(btn => {
+    btn.onclick = () => {
+      const next = btn.dataset.tab;
+      if (next === tab) return;
+      document.querySelectorAll("#authTabs .auth-tab").forEach(b => b.classList.toggle("active", b === btn));
+      renderAuth._tab = next;
+      if (next === "pwd") {
+        if (!renderAuth._pwdMode) renderAuth._pwdMode = "in";
+        renderAuth._screen = "pwd";
+      } else {
+        renderAuth._screen = "input";
+      }
+      const slot = document.getElementById("authFormSlot");
+      if (slot) slot.innerHTML = authFormInner(next, renderAuth._screen, isZh);
+      bindAuthForm();
+    };
+  });
+
+  const cont = document.getElementById("continueCurrentBtn");
   if (cont) cont.onclick = () => {
-    // Strip the ?login=1 flag and reload into the app.
     try {
       const u = new URL(window.location.href);
-      u.searchParams.delete('login');
-      window.location.replace(u.pathname + (u.search ? u.search : '') + u.hash);
-    } catch (_) {
-      window.location.replace('app.html');
-    }
+      u.searchParams.delete("login");
+      window.location.replace(u.pathname + (u.search ? u.search : "") + u.hash);
+    } catch (_) { window.location.replace("app.html"); }
   };
-  const sw = document.getElementById('switchAccountBtn');
+  const sw = document.getElementById("switchAccountBtn");
   if (sw) sw.onclick = async () => {
     if (!sb) return;
     try { await sb.auth.signOut(); } catch (_) {}
-    sbUser = null;
-    state.signedIn = false;
-    state.profile = null;
-    state._prefNewsTopics = null;
-    state.chat = [];
-    localStorage.removeItem('signedIn');
+    sbUser = null; state.signedIn = false; state.profile = null; state._prefNewsTopics = null; state.chat = [];
+    localStorage.removeItem("signedIn");
     renderAuth._signedInEmail = null;
     render();
   };
 
-  if (otpMode) {
-    document.getElementById('verifyBtn').onclick = onVerifyOtp;
-  } else if (pwdMode) {
-    const primary = document.getElementById('pwdPrimaryBtn');
-    const emailIn = document.getElementById('pwdEmail');
-    const note = document.getElementById('pwdEmailNote');
-    const link = document.getElementById('pwdToggleLink');
-    const isEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((v||'').trim());
-    const modeUp = () => renderAuth._pwdMode === 'up';
+  if (screen === "otp") {
+    const v = document.getElementById("verifyBtn"); if (v) v.onclick = onVerifyOtp;
+    const r = document.getElementById("resendLinkBtn");
+    if (r) r.onclick = () => { if (tab === "email") onSendEmail(); else onSendPhone(); };
+    const c = document.getElementById("changeEmailBtn");
+    if (c) c.onclick = () => { renderAuth._screen = "input"; render(); };
+    return;
+  }
+  if (screen === "pwd") {
+    const primary = document.getElementById("pwdPrimaryBtn");
+    const emailIn = document.getElementById("pwdEmail");
+    const link = document.getElementById("pwdToggleLink");
+    const modeUp = () => renderAuth._pwdMode === "up";
     const refreshPrimary = () => {
       if (!primary) return;
-      if (modeUp()) {
-        primary.textContent = isZh ? '注册 / Sign Up' : 'Sign Up';
-        if (note) note.style.display = 'none';
-        return;
-      }
-      const emailish = emailIn && isEmail(emailIn.value);
+      if (modeUp()) { primary.textContent = isZh ? "注册 / Sign Up" : "Sign Up"; return; }
+      const emailish = emailIn && authIsEmail(emailIn.value);
       primary.textContent = emailish
-        ? (isZh ? '发送登录链接 / Send sign-in link' : 'Send sign-in link')
-        : (isZh ? '登录 / Sign In' : 'Sign In');
-      if (note) note.style.display = emailish ? 'block' : 'none';
+        ? (isZh ? "发送登录链接 / Send sign-in link" : "Send sign-in link")
+        : (isZh ? "登录 / Sign In" : "Sign In");
     };
     if (emailIn) {
-      emailIn.addEventListener('input', refreshPrimary);
+      emailIn.addEventListener("input", () => {
+        refreshPrimary();
+        if (!modeUp()) scheduleAuthEmailCheck(emailIn.value.trim());
+      });
       refreshPrimary();
     }
     if (primary) primary.onclick = () => {
-      if (modeUp()) { onPwdSubmit('up'); return; }
-      if (emailIn && isEmail(emailIn.value)) {
-        // Email detected → treat as magic-link flow ("send verification link").
+      if (modeUp()) { onPwdSubmit("up"); return; }
+      if (emailIn && authIsEmail(emailIn.value)) {
         const email = emailIn.value.trim();
-        const hidden = document.createElement('input');
-        hidden.id = 'emailInput'; hidden.type = 'hidden'; hidden.value = email;
+        renderAuth._email = email;
+        const hidden = document.createElement("input");
+        hidden.id = "emailInput"; hidden.type = "hidden"; hidden.value = email;
         document.body.appendChild(hidden);
-        try { onSendEmail(); }
-        finally { setTimeout(() => hidden.remove(), 4000); }
+        try { onSendEmail(); } finally { setTimeout(() => hidden.remove(), 4000); }
       } else {
-        onPwdSubmit('in');
+        onPwdSubmit("in");
       }
     };
     if (link) link.onclick = () => {
-      renderAuth._pwdMode = renderAuth._pwdMode === 'up' ? 'in' : 'up';
-      render();
+      renderAuth._pwdMode = renderAuth._pwdMode === "up" ? "in" : "up";
+      const slot = document.getElementById("authFormSlot");
+      if (slot) slot.innerHTML = authFormInner("pwd", "pwd", isZh);
+      bindAuthForm();
     };
-  } else {
-    const sendBtn = document.getElementById('sendBtn');
-    const sendEmailBtn = document.getElementById('sendEmailBtn');
-    if (sendBtn) sendBtn.onclick = onSendPhone;
-    if (sendEmailBtn) sendEmailBtn.onclick = onSendEmail;
+    return;
+  }
+  const sendBtn = document.getElementById("sendBtn");
+  const sendEmailBtn = document.getElementById("sendEmailBtn");
+  if (sendBtn) sendBtn.onclick = onSendPhone;
+  if (sendEmailBtn) sendEmailBtn.onclick = onSendEmail;
+  if (tab === "email") {
+    const emailIn = document.getElementById("emailInput");
+    if (emailIn) {
+      emailIn.addEventListener("input", () => {
+        if (authIsEmail(emailIn.value.trim())) scheduleAuthEmailCheck(emailIn.value.trim());
+      });
+    }
   }
 }
 

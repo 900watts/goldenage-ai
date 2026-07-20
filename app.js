@@ -47,6 +47,7 @@ const I18N = {
     scamAdvice: 'AI建议', scamReason: '原因',
     guardTitle: '守护者', guardSub: '配对家人，守护您的安全',
     guardPaired: '已配对', guardNot: '未配对', guardShowQr: '显示我的专属 ID', guardPairedGuardian: '王小明 · 儿子',
+    guardYourGuardian: '我的守护者', guardYourGuardianNone: '尚未配对守护者', guardYourGuardianHint: '配对后，您出现紧急情况时守护者会立即收到通知。', guardUnpair: '解除配对',
     guardAddById: '用账户 ID 绑定', guardAddHint: '让长辈在「我」页面 → 「账户与配对」里把账户 ID 复制给你，然后粘贴在这里。', guardIdPlaceholder: '粘贴长辈的账户 ID（例如：a1b2c3d4-…）', guardAddBtn: '绑定', guardNoIdHint: '不知道账户 ID？打开「我」页面，账户 ID 在「账户与配对」卡片里。',
     medTitle: '用药管理', medTaken: '已服药', medSkip: '跳过', medAdd: '添加提醒',
     medTake1: '降压药', medTake1Sub: '08:00 · 20:00 · 饭后服用',
@@ -138,6 +139,7 @@ const I18N = {
     guardTitle: 'Guardian', guardSub: 'Pair a family member to keep you safe',
     guardPaired: 'Paired', guardNot: 'Not paired', guardShowQr: 'Show My Personalized ID', guardPairedGuardian: 'Xiao Ming · Son',
     guardAddById: 'Add by Account ID', guardAddHint: 'Ask the elder to open Me → Account & Pairing, then share their Account ID. Paste it here.', guardIdPlaceholder: 'Paste the elder\'s Account ID (e.g. a1b2c3d4-…)', guardAddBtn: 'Pair', guardNoIdHint: 'Don\'t know the Account ID? Open Me to find yours; ask the elder to do the same.',
+    guardYourGuardian: 'My Guardian', guardYourGuardianNone: 'No guardian paired yet', guardYourGuardianHint: 'When paired, your guardian will be alerted instantly if you have an emergency.', guardUnpair: 'Unpair',
     medTitle: 'Medication', medTaken: 'Taken', medSkip: 'Skip', medAdd: 'Add Reminder',
     medTake1: 'Blood Pressure Meds', medTake1Sub: '08:00 · 20:00 · with food',
     medTake2: 'Calcium', medTake2Sub: '12:00 · with lunch',
@@ -1344,7 +1346,7 @@ function render() {
     case 'me': return renderMe(screen);
     case 'news': return renderNews(screen);
     case 'scam': return renderScam(screen);
-    case 'guardian': return renderGuardian(screen);
+    case 'guardian': return renderGuardian(screen);  // async — fire-and-forget; renderGuardian manages its own innerHTML/loading
     case 'medication': return renderMedication(screen);
     case 'reminders': return renderReminders(screen);
   }
@@ -3889,11 +3891,18 @@ function loadGuardians() {
 function saveGuardians() { localStorage.setItem('guardians', JSON.stringify(guardians)); }
 loadGuardians();
 
-function renderGuardian(root) {
+async function renderGuardian(root) {
   const isZh = state.lang === 'zh';
+
+  // Paint a sync placeholder so the screen appears immediately, then upgrade
+  // it once the get_my_guardian() RPC returns.
   root.innerHTML = `
     <h2 class="section-title">${t('guardTitle')}</h2>
     <p class="text-soft" style="margin-bottom:20px">${t('guardSub')}</p>
+    <div class="card" id="myGuardianCard" style="padding:18px 20px;margin-bottom:18px;min-height:88px">
+      <div style="font-size:.78rem;color:var(--muted-app);font-weight:600;letter-spacing:.04em;text-transform:uppercase">${t('guardYourGuardian')}</div>
+      <div style="font-size:1.05rem;font-weight:600;color:var(--muted-app);margin-top:4px">${isZh ? '正在加载…' : 'Loading…'}</div>
+    </div>
     <div class="auto-grid">
     ${guardians.map((g, i) => `
       <div class="card-label card">
@@ -3927,6 +3936,60 @@ function renderGuardian(root) {
       </div>
     ` : ''}
   `;
+
+  // ---- Fetch & render the elder's CURRENT guardian (the person guarding me) ----
+  (async () => {
+    if (!sbReady() || !sbUser) return;
+    let myGuardian = null;
+    try {
+      const { data, error } = await sb.rpc('get_my_guardian');
+      if (!error && data) myGuardian = data;  // {id, display_name} or null
+    } catch (_) { /* graceful */ }
+    const slot = document.getElementById('myGuardianCard');
+    if (!slot) return;
+    slot.outerHTML = `
+      <div class="card" style="padding:18px 20px;margin-bottom:18px;${myGuardian ? 'background:linear-gradient(135deg,rgba(13,148,136,.10),rgba(255,255,255,.6));border:1.5px solid var(--primary)' : ''}">
+        <div style="display:flex;align-items:center;gap:14px">
+          <div style="width:48px;height:48px;border-radius:14px;background:${myGuardian ? 'linear-gradient(135deg,var(--primary),var(--primary-dark))' : 'var(--bg-app)'};color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="${myGuardian ? '#fff' : 'var(--muted-app)'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:.78rem;color:var(--muted-app);font-weight:600;letter-spacing:.04em;text-transform:uppercase">${t('guardYourGuardian')}</div>
+            <div style="font-size:1.1rem;font-weight:700;color:${myGuardian ? 'var(--text-app)' : 'var(--muted-app)'};margin-top:2px;word-break:break-word">
+              ${myGuardian
+                ? escapeHtml(myGuardian.display_name || (isZh ? '已配对的守护者' : 'Paired guardian'))
+                : t('guardYourGuardianNone')}
+            </div>
+            <div style="font-size:.8rem;color:var(--muted-app);margin-top:2px">${t('guardYourGuardianHint')}</div>
+          </div>
+          ${myGuardian ? `
+          <button class="big-btn ghost" id="unpairMyGuardianBtn" style="width:auto;min-width:0;padding:8px 14px;font-size:.85rem;color:var(--danger);border-color:var(--danger)">${t('guardUnpair')}</button>
+          ` : ''}
+        </div>
+      </div>`;
+    // Wire unpair
+    const up = document.getElementById('unpairMyGuardianBtn');
+    if (up) up.onclick = async () => {
+      const ok = await showDialog({
+        title: isZh ? '解除守护者配对' : 'Unpair Guardian',
+        body:  isZh ? '解除后，您出现紧急情况时对方将不会再收到通知。' : 'Your guardian will no longer be notified if you have an emergency.',
+        confirmLabel: isZh ? '解除配对' : 'Unpair',
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        const { error } = await sb.from('profiles').update({ guardian_account_id: null }).eq('id', sbUser.id);
+        if (error) throw error;
+        // Also drop the reverse pointer on the guardian's side, if any.
+        try { await sb.from('profiles').update({ elder_account_id: null }).eq('id', myGuardian.id); } catch (_) {}
+        toast(isZh ? '已解除守护者配对' : 'Guardian unpaired');
+        render();
+      } catch (e) {
+        toast((isZh ? '解除失败：' : 'Unpair failed: ') + (e?.message || e), true);
+      }
+    };
+  })();
+
   // Bind handler — uses the Supabase RPC pair_with_elder which accepts
   // either the elder's pairing_code OR their full account id.
   const bindBtn = document.getElementById('guardianBindBtn');

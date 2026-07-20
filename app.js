@@ -1323,6 +1323,8 @@ function render() {
     renderAuth(screen);
     document.getElementById('bottomNav').style.display = 'none';
     document.getElementById('bubbleFab').style.display = 'none';
+    const appbar = document.querySelector('.appbar');
+    if (appbar) appbar.style.display = 'none';
     if (sideNav) sideNav.classList.add('hidden');
     if (app) app.classList.add('no-sidebar');
     return;
@@ -1330,6 +1332,8 @@ function render() {
   // Show sidebar on PC (>=900px), bottom nav on mobile
   if (sideNav) sideNav.classList.remove('hidden');
   if (app) app.classList.remove('no-sidebar');
+  const appbar = document.querySelector('.appbar');
+  if (appbar) appbar.style.display = '';
   document.getElementById('bottomNav').style.display = '';
   document.getElementById('bubbleFab').style.display = 'flex';
   switch (state.route) {
@@ -2000,16 +2004,17 @@ function renderAuthSetup(root, isZh) {
   const stepHtml = [wizardStep1(w, isZh), wizardStep2(w, isZh), wizardStep3(w, isZh)][w.step];
 
   root.innerHTML = `
-    <div style="display:flex;flex-direction:column;align-items:stretch;padding:24px 24px 32px;width:100%;min-height:100%;overflow-y:auto;background:var(--bg-app)">
+    <div class="auth-stage" style="overflow-y:auto;align-items:flex-start;padding-top:24px">
+      <div style="width:100%;max-width:520px;color:#FBEEDB">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-        <div style="font-size:.9rem;color:var(--muted)">${w.step+1} / ${total}</div>
-        <button class="big-btn ghost" id="wizClose" style="width:auto;min-width:0;padding:8px 14px;font-size:.9rem;min-height:36px;background:transparent;border:0;color:var(--muted)">${isZh?'关闭':'Close'}</button>
+        <div style="font-size:.9rem;color:rgba(251,238,219,.55)">${w.step+1} / ${total}</div>
+        <button class="big-btn ghost" id="wizClose" style="width:auto;min-width:0;padding:8px 14px;font-size:.9rem;min-height:36px;background:transparent;border:0;color:rgba(251,238,219,.55)">${isZh?'关闭':'Close'}</button>
       </div>
       <div style="display:flex;gap:6px;margin-bottom:18px">
-        ${Array.from({length:total}).map((_,i)=>`<div style="flex:1;height:6px;border-radius:3px;background:${i<=w.step?'var(--primary)':'var(--border-app)'}"></div>`).join('')}
+        ${Array.from({length:total}).map((_,i)=>`<div style="flex:1;height:6px;border-radius:3px;background:${i<=w.step?'var(--grad-sunset)':'rgba(255,255,255,.10)'}"></div>`).join('')}
       </div>
-      <h2 style="margin-bottom:4px">${titles[w.step]}</h2>
-      <p class="text-soft" style="margin-bottom:18px">${subs[w.step]}</p>
+      <h2 style="margin-bottom:4px;color:#FBEEDB">${titles[w.step]}</h2>
+      <p class="auth-hint" style="margin-bottom:18px;text-align:left">${subs[w.step]}</p>
       <div id="wizStep" style="flex:1">${stepHtml}</div>
       <div style="height:18px"></div>
       <div style="display:flex;gap:10px">
@@ -2023,6 +2028,9 @@ function renderAuthSetup(root, isZh) {
       </button>` : `
       <div style="height:10px"></div>
       <button class="big-btn ghost" id="wizSkip" style="width:100%;min-width:0;background:transparent;border:0;color:var(--muted)">${t('setupSkip')}</button>`}
+    </div>
+    </div>
+    <div class="auth-foot" style="position:static;margin-top:18px">GoldenAge AI · ${isZh?'长者友好 · 隐私保护':'Elder-friendly · Privacy first'}</div>
     </div>`;
 
   document.getElementById('wizClose').onclick = () => {
@@ -2066,7 +2074,7 @@ function wizardStep1(w, isZh) {
       <div style="display:flex;gap:12px">
         <div style="flex:1">
           <label class="field-label">${t('setupGender')}</label>
-          <select id="wzGender" style="font-size:1.2rem;padding:12px;border-radius:12px;border:1px solid var(--border-app);width:100%;background:#fff">
+          <select id="wzGender" style="font-size:1.2rem;padding:12px;border-radius:12px;border:1px solid var(--border-app);width:100%;background:rgba(255,255,255,.06);color:#FBEEDB">
             <option value="" ${!w.data.gender?'selected':''}>—</option>
             <option value="female" ${w.data.gender==='female'?'selected':''}>${t('setupGenderFemale')}</option>
             <option value="male"   ${w.data.gender==='male'  ?'selected':''}>${t('setupGenderMale')}</option>

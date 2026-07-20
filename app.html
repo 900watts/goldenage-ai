@@ -367,6 +367,22 @@ label.field-label{display:block;font-weight:600;margin-bottom:8px;font-size:1rem
 .auth-toggle a,.auth-toggle span{cursor:pointer;color:#F2A93B;font-weight:600;text-decoration:none}
 .auth-toggle a:hover,.auth-toggle span:hover{color:#E88D56}
 .auth-foot{position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:.72rem;color:rgba(251,238,219,.35);z-index:1}
+/* === AUTH mode overrides (when not signed in) === */
+#app.no-sidebar{background:#0F0A1F}
+#app.no-sidebar .screen{padding:0;overflow:hidden}
+#app.no-sidebar .main-col{background:#0F0A1F}
+#app.no-sidebar .appbar{display:none !important}
+#app.no-sidebar .side-nav{display:none !important}
+/* The "Already signed in" card on the auth screen should look like part of the dark stage */
+#app.no-sidebar .screen .card:not(.bubble):not(.feature-tile):not(.stat-card):not(.news-card):not(.quote-card):not(.verdict-card):not(.med-card):not(.topup-card):not(.setting-card){background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.10);color:#FBEEDB;backdrop-filter:blur(8px)}
+/* Wizard inputs/selects/fields on the dark stage */
+#app.no-sidebar .screen input,#app.no-sidebar .screen select,#app.no-sidebar .screen textarea{background:rgba(255,255,255,.06) !important;border-color:rgba(255,255,255,.12) !important;color:#FBEEDB !important}
+#app.no-sidebar .screen input::placeholder{color:rgba(251,238,219,.35)}
+#app.no-sidebar .screen .field-label{color:rgba(251,238,219,.85)}
+#app.no-sidebar .screen .text-soft{color:rgba(251,238,219,.6) !important}
+#app.no-sidebar .screen .big-btn.ghost{background:transparent !important;border-color:rgba(255,255,255,.18) !important;color:rgba(251,238,219,.85) !important}
+#app.no-sidebar .screen .big-btn.primary{background:linear-gradient(135deg,var(--primary),var(--cta)) !important;color:#1A1530 !important;border:0}
+#app.no-sidebar .screen select option{color:#1A1530;background:#fff}
 /* Entrance animation removed by user request — show instantly. */
 @media (prefers-reduced-motion:reduce){.auth-cta,.auth-cta.ghost{transition:none}}
 @keyframes authFade{from{opacity:0}to{opacity:1}}

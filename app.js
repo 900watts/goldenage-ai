@@ -1414,19 +1414,18 @@ function renderAuth(root) {
         <div class="auth-field" style="text-align:left">
           <h3 style="margin:0 0 4px;text-align:center;font-size:1.2rem">${renderAuth._pwdMode === 'up' ? (isZh?'创建账户':'Create Account') : (isZh?'登录账户':'Sign In')}</h3>
           <p class="text-soft" style="margin:0 0 16px;text-align:center;font-size:.88rem">${renderAuth._pwdMode === 'up' ? (isZh?'使用邮箱 + 密码':'Set a password — no verification needed') : (isZh?'欢迎回来':'Welcome back')}</p>
-          <label class="auth-label">${isZh?'邮箱地址':'Email address'}</label>
-          <input id="pwdEmail" class="auth-input" type="email" autocomplete="email" placeholder="you@example.com">
+          <label class="auth-label">${isZh?'邮箱 / 用户名':'Email / Username'}</label>
+          <input id="pwdEmail" class="auth-input auth-pill" type="email" autocomplete="username" placeholder="${isZh?'邮箱或用户名':'email or username'}">
           <div style="height:12px"></div>
-          <label class="auth-label">${isZh?'密码（至少 6 位）':'Password (6+ characters)'}</label>
-          <input id="pwdInput" class="auth-input" type="password" autocomplete="${renderAuth._pwdMode==='up'?'new-password':'current-password'}" style="letter-spacing:2px" placeholder="${renderAuth._pwdMode==='up' ? (isZh?'设置密码（≥6位）':'Set a password (6+ chars)') : (isZh?'输入密码':'Enter password')}">
+          <label class="auth-label">${isZh?'密码':'Password'}</label>
+          <input id="pwdInput" class="auth-input auth-pill" type="password" autocomplete="${renderAuth._pwdMode==='up'?'new-password':'current-password'}" style="letter-spacing:2px" placeholder="${renderAuth._pwdMode==='up' ? (isZh?'设置密码（≥6位）':'Set a password (6+ chars)') : (isZh?'输入密码':'Enter password')}">
           <div style="height:18px"></div>
-          <button class="big-btn primary auth-cta" id="pwdSignUpBtn" style="background:linear-gradient(135deg,var(--primary),var(--cta)) !important">${isZh?'注册 / Sign Up':'Sign Up'}</button>
-          <div style="height:8px"></div>
-          <button class="big-btn auth-cta ghost" id="pwdSignInBtn">${isZh?'登录 / Sign In':'Sign In'}</button>
+          <button class="big-btn primary auth-cta" id="pwdPrimaryBtn" style="background:linear-gradient(135deg,var(--primary),var(--cta)) !important">${isZh?'登录 / Sign In':'Sign In'}</button>
           <div style="text-align:center;font-size:.88rem;color:var(--text-soft-app);margin-top:14px">
             <span id="pwdToggleLink" style="cursor:pointer;color:var(--primary);font-weight:600">${renderAuth._pwdMode === 'up' ? (isZh?'已有账户？直接登录':'Already have an account? Sign In') : (isZh?'还没账户？立即注册（无需邮箱验证）':'New here? Create an account (no email verify)')}</span>
           </div>
-          <p class="auth-hint" style="text-align:center;margin-top:8px">${isZh?'密码经 Supabase Auth 散列存储':'Passwords are stored hashed by Supabase Auth'}</p>
+          <p class="auth-hint" id="pwdEmailNote" style="text-align:center;margin-top:8px;display:none">${isZh?'检测到邮箱 — 点击将发送登录链接':'Email detected — button sends a sign-in link'}</p>
+          <p class="auth-hint" style="text-align:center;margin-top:6px">${isZh?'密码经 Supabase Auth 散列存储':'Passwords are stored hashed by Supabase Auth'}</p>
         </div>
       ` : (tab === 'phone' ? `
         <div class="auth-field">
@@ -1494,11 +1493,43 @@ function renderAuth(root) {
   if (otpMode) {
     document.getElementById('verifyBtn').onclick = onVerifyOtp;
   } else if (pwdMode) {
-    const signup = document.getElementById('pwdSignUpBtn');
-    const signin = document.getElementById('pwdSignInBtn');
+    const primary = document.getElementById('pwdPrimaryBtn');
+    const emailIn = document.getElementById('pwdEmail');
+    const note = document.getElementById('pwdEmailNote');
     const link = document.getElementById('pwdToggleLink');
-    if (signup) signup.onclick = () => { renderAuth._pwdMode = 'up'; onPwdSubmit('up'); };
-    if (signin) signin.onclick = () => { renderAuth._pwdMode = 'in'; onPwdSubmit('in'); };
+    const isEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((v||'').trim());
+    const modeUp = () => renderAuth._pwdMode === 'up';
+    const refreshPrimary = () => {
+      if (!primary) return;
+      if (modeUp()) {
+        primary.textContent = isZh ? '注册 / Sign Up' : 'Sign Up';
+        if (note) note.style.display = 'none';
+        return;
+      }
+      const emailish = emailIn && isEmail(emailIn.value);
+      primary.textContent = emailish
+        ? (isZh ? '发送登录链接 / Send sign-in link' : 'Send sign-in link')
+        : (isZh ? '登录 / Sign In' : 'Sign In');
+      if (note) note.style.display = emailish ? 'block' : 'none';
+    };
+    if (emailIn) {
+      emailIn.addEventListener('input', refreshPrimary);
+      refreshPrimary();
+    }
+    if (primary) primary.onclick = () => {
+      if (modeUp()) { onPwdSubmit('up'); return; }
+      if (emailIn && isEmail(emailIn.value)) {
+        // Email detected → treat as magic-link flow ("send verification link").
+        const email = emailIn.value.trim();
+        const hidden = document.createElement('input');
+        hidden.id = 'emailInput'; hidden.type = 'hidden'; hidden.value = email;
+        document.body.appendChild(hidden);
+        try { onSendEmail(); }
+        finally { setTimeout(() => hidden.remove(), 4000); }
+      } else {
+        onPwdSubmit('in');
+      }
+    };
     if (link) link.onclick = () => {
       renderAuth._pwdMode = renderAuth._pwdMode === 'up' ? 'in' : 'up';
       render();

@@ -1356,150 +1356,6 @@ function render() {
 // Sunset-on-navy login. Instant tab switching (swap form slot only, no full
 // re-render). Email fields run a best-effort existence check; new users fall
 // through the existing finishSignIn -> setup wizard path.
-//
-// Cloudflare Turnstile (invisible-mode widget) gates every auth call. Token
-// is produced on the client and verified server-side via the
-// `verify-turnstile` Supabase edge function (TURNSTILE_SECRET is server-side).
-
-const TURNSTILE_SITE_KEY = '0x4AAAAAAD5062bOEo5xRbi7';
-let _turnstileReady = null;
-let _turnstileWidgetId = null;
-let _turnstileTokenResolver = null;
-let _turnstileLastToken = null;
-let _turnstileLastError = null;
-
-// Poll for window.turnstile instead of relying on the onload callback —
-// the async/defer script tag can load and fire onTurnstileReady() before
-// app.js defines it, so the callback-based approach is unreliable.
-function ensureTurnstile() {
-  if (_turnstileReady) return _turnstileReady;
-  _turnstileReady = new Promise((resolve) => {
-    if (window.turnstile) { resolve(window.turnstile); return; }
-    let elapsed = 0;
-    const poll = setInterval(() => {
-      elapsed += 100;
-      if (window.turnstile) {
-        clearInterval(poll);
-        resolve(window.turnstile);
-      } else if (elapsed > 10000) {
-        clearInterval(poll);
-        console.warn('[Turnstile] script did not load within 10s — falling back');
-        resolve(null);
-      }
-    }, 100);
-  });
-  return _turnstileReady;
-}
-function onTurnstileReady() { /* kept for backwards compat; polling is the real mechanism */ }
-
-async function mountTurnstile(slotEl) {
-  if (!slotEl) return;
-  const ts = await ensureTurnstile();
-  if (!ts) { console.warn('[Turnstile] API not available — logins will bypass verification'); return; }
-  if (_turnstileWidgetId !== null) {
-    try { ts.remove(_turnstileWidgetId); } catch (_) {}
-    _turnstileWidgetId = null;
-  }
-  try {
-    _turnstileWidgetId = ts.render('#auth-turnstile', {
-      sitekey: TURNSTILE_SITE_KEY,
-      size: 'invisible',
-      execution: 'execute',
-      callback: (token) => {
-        _turnstileLastToken = token;
-        _turnstileLastError = null;
-        if (_turnstileTokenResolver) {
-          const r = _turnstileTokenResolver;
-          _turnstileTokenResolver = null;
-          r(token);
-        }
-      },
-      'error-callback': (err) => {
-        _turnstileLastError = err;
-        console.warn('[Turnstile] widget error:', err);
-        if (_turnstileTokenResolver) {
-          const r = _turnstileTokenResolver;
-          _turnstileTokenResolver = null;
-          r(null);  // resolve with null — graceful fallback, not a hard reject
-        }
-      },
-    });
-  } catch (e) {
-    console.warn('[Turnstile] mount failed:', e);
-  }
-}
-
-function getTurnstileToken() {
-  if (!_turnstileWidgetId || !window.turnstile) {
-    return Promise.resolve(null);  // graceful: widget not ready → caller decides
-  }
-  return new Promise((resolve) => {
-    _turnstileTokenResolver = resolve;   // note: resolve(null) on error, not reject
-    _turnstileLastToken = null;
-    try {
-      window.turnstile.execute(_turnstileWidgetId, { action: 'auth' });
-    } catch (e) {
-      _turnstileTokenResolver = null;
-      console.warn('[Turnstile] execute failed:', e);
-      resolve(null);
-    }
-    setTimeout(() => {
-      if (_turnstileTokenResolver === resolve) {
-        _turnstileTokenResolver = null;
-        console.warn('[Turnstile] timed out after 12s — falling back');
-        resolve(null);
-      }
-    }, 12000);
-  });
-}
-
-async function verifyTurnstileOnServer(token) {
-  if (!token) return { ok: false, error: 'no_token' };
-  try {
-    const r = await fetch(SB_URL + '/functions/v1/verify-turnstile', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token }),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!j || j.ok !== true) {
-      return { ok: false, error: (j && j.error) || 'verify_failed', status: r.status };
-    }
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: 'verify_unreachable: ' + (e && e.message || e) };
-  }
-}
-
-// One-shot helper. Strategy:
-//  - Try to get a token from the widget.
-//  - If we get a token → verify server-side. If Cloudflare says no → HARD BLOCK.
-//  - If we DON'T get a token (widget not loaded, errored, or timed out) →
-//    SOFT FALLBACK: allow the login but log a warning. The widget failure is
-//    a config/network issue, not a bot attack — blocking all logins when
-//    Cloudflare is down would be worse than skipping verification.
-async function requireTurnstile(toastMsg) {
-  // Wait for the widget to mount if it hasn't yet
-  if (!_turnstileWidgetId) {
-    try { await ensureTurnstile(); } catch (_) {}
-    if (!_turnstileWidgetId && document.getElementById('auth-turnstile')) {
-      await mountTurnstile(document.getElementById('auth-turnstile'));
-    }
-  }
-  const token = await getTurnstileToken();
-  if (!token) {
-    // Soft fallback — widget didn't produce a token
-    console.warn('[Turnstile] no token produced — allowing login (soft fallback)');
-    return true;
-  }
-  const r = await verifyTurnstileOnServer(token);
-  if (!r.ok) {
-    // Hard block — Cloudflare explicitly rejected the token
-    if (toastMsg) toast(toastMsg + ' (verify: ' + r.error + ')', true);
-    return false;
-  }
-  return true;
-}
 
 function authStatusEl(kind, text) {
   if (!text) return "";
@@ -1621,7 +1477,6 @@ function authFormInner(tab, screen, isZh) {
         <input id="pwdInput" class="auth-input" type="password" autocomplete="${renderAuth._pwdMode==="up"?"new-password":"current-password"}" style="letter-spacing:2px" placeholder="${renderAuth._pwdMode === "up" ? (isZh?"设置密码（≥6位）":"Set a password (6+ chars)") : (isZh?"输入密码":"Enter password")}">
         <div style="height:18px"></div>
 
-        <div id="auth-turnstile" style="min-height:0;margin:0"></div>
         <button class="auth-cta" id="pwdPrimaryBtn">${isZh?"登录 / Sign In":"Sign In"}</button>
         <div class="auth-toggle">
           <span id="pwdToggleLink">${renderAuth._pwdMode === "up" ? (isZh?"已有账户？直接登录":"Already have an account? Sign In") : (isZh?"还没账户？立即注册（无需邮箱验证）":"New here? Create an account (no email verify)")}</span>
@@ -1635,7 +1490,6 @@ function authFormInner(tab, screen, isZh) {
       <p class="auth-hint">${t("authPhoneHint")}</p>
       <div style="height:14px"></div>
 
-      <div id="auth-turnstile" style="min-height:0;margin:0"></div>
       <button class="auth-cta" id="sendBtn">${t("authSend")}</button>
     </div>`;
   return `
@@ -1646,7 +1500,6 @@ function authFormInner(tab, screen, isZh) {
       <p class="auth-hint">${t("authSmsHint")}</p>
       <div style="height:14px"></div>
 
-      <div id="auth-turnstile" style="min-height:0;margin:0"></div>
       <button class="auth-cta" id="sendEmailBtn">${t("authSend")}</button>
       <div class="auth-note">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F2A93B" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
@@ -1758,14 +1611,12 @@ function bindAuthForm() {
       });
     }
   }
-  if (document.getElementById('auth-turnstile')) mountTurnstile(document.getElementById('auth-turnstile'));
 }
 
 async function onSendPhone() {
   const isZh = state.lang === 'zh';
   const v = document.getElementById('phoneInput').value.trim();
   if (v.length < 6) return toast(isZh?'请输入手机号':'Enter your phone', true);
-  if (!await requireTurnstile(isZh ? '请先完成人机验证' : 'Please complete human verification first')) return;
   renderAuth._phone = v;
   if (!sb) { renderAuth._screen='otp'; render(); return; }
   const btn = document.getElementById('sendBtn');
@@ -1791,7 +1642,6 @@ async function onSendEmail() {
   const isZh = state.lang === 'zh';
   const v = document.getElementById('emailInput').value.trim();
   if (!/^[^@]+@[^@]+\.[^@]+$/.test(v)) return toast(isZh?'请输入有效的邮箱地址':'Enter a valid email', true);
-  if (!await requireTurnstile(isZh ? '请先完成人机验证' : 'Please complete human verification first')) return;
   const domain = v.split('@')[1]?.toLowerCase() || '';
   if (!/^([a-z0-9-]+\.)+[a-z]{2,}$/.test(domain) || /gmail\.con|gmai\.com|gmial\.com|yahoo\.con|hotmai\.com/.test(v)) {
     return toast(isZh?'邮箱域名看起来不正确（请检查拼写）':'Email domain looks incorrect — check spelling', true);
@@ -1897,7 +1747,6 @@ async function onPwdSubmit(forceMode) {
   const password = pwdEl?.value || '';
   if (!/^[^@]+@[^@]+\.[^@]+$/.test(email)) return toast(isZh ? '请输入有效的邮箱' : 'Enter a valid email', true);
   if (password.length < 6) return toast(isZh ? '密码至少 6 位' : 'Password must be 6+ characters', true);
-  if (!await requireTurnstile(isZh ? '请先完成人机验证' : 'Please complete human verification first')) return;
 
   // Determine which button was clicked (or use forced mode)
   const mode = forceMode || (renderAuth._pwdMode === 'up' ? 'up' : 'in');

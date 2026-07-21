@@ -1365,6 +1365,8 @@ const TURNSTILE_SITE_KEY = '0x4AAAAAAD5062bOEo5xRbi7';
 let _turnstileReady = null;
 let _turnstileWidgetId = null;
 let _turnstileTokenResolver = null;
+let _turnstileLastToken = null;   // store the most recent token so a
+                                   // late-arriving resolver can still use it
 
 function onTurnstileReady() {
   if (window._turnstileReadyResolve) {
@@ -1401,8 +1403,9 @@ async function mountTurnstile(slotEl) {
     _turnstileWidgetId = ts.render('#auth-turnstile', {
       sitekey: TURNSTILE_SITE_KEY,
       size: 'invisible',
-      execution: 'render',
+      execution: 'execute',         // only produce a token on demand
       callback: (token) => {
+        _turnstileLastToken = token;
         if (_turnstileTokenResolver) {
           const r = _turnstileTokenResolver;
           _turnstileTokenResolver = null;
@@ -1428,6 +1431,7 @@ function getTurnstileToken() {
   }
   return new Promise((resolve, reject) => {
     _turnstileTokenResolver = resolve;
+    _turnstileLastToken = null;     // tokens are single-use; force a fresh one
     try {
       window.turnstile.execute(_turnstileWidgetId, { action: 'auth' });
     } catch (e) {
@@ -1462,6 +1466,15 @@ async function verifyTurnstileOnServer(token) {
 }
 
 async function requireTurnstile(toastMsg) {
+  // If the widget hasn't mounted yet (script still loading), wait for it.
+  if (!_turnstileWidgetId) {
+    try { await ensureTurnstile(); } catch (_) {}
+    // Re-check after the API loads — mountTurnstile may have already run
+    // via bindAuthForm, or we may need to trigger it ourselves.
+    if (!_turnstileWidgetId && document.getElementById('auth-turnstile')) {
+      await mountTurnstile(document.getElementById('auth-turnstile'));
+    }
+  }
   let token;
   try {
     token = await getTurnstileToken();

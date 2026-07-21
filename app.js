@@ -1548,7 +1548,6 @@ function renderAuth(root) {
 
         <div id="authFormSlot">${authFormInner(tab, screen, isZh)}</div>
       </div>
-      <div class="auth-foot">GoldenAge AI · ${isZh?"长者友好 · 隐私保护":"Elder-friendly · Privacy first"}</div>
     </div>
   `;
 
@@ -2163,7 +2162,6 @@ function renderAuthSetup(root, isZh) {
       <button class="big-btn ghost" id="wizSkip" style="width:100%;min-width:0;background:transparent;border:0;color:var(--muted)">${t('setupSkip')}</button>`}
     </div>
     </div>
-    <div class="auth-foot" style="position:static;margin-top:18px">GoldenAge AI · ${isZh?'长者友好 · 隐私保护':'Elder-friendly · Privacy first'}</div>
     </div>`;
 
   document.getElementById('wizClose').onclick = () => {

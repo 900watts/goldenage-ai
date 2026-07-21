@@ -80,8 +80,43 @@ html.elderly-mode .tile-title{letter-spacing:.01em}
   --elev-1:0 1px 2px rgba(0,0,0,.3),0 6px 18px -8px rgba(0,0,0,.5);
   --elev-2:0 2px 4px rgba(0,0,0,.35),0 14px 36px -10px rgba(0,0,0,.6);
 }
+
+/* === MOTION TOKENS (emilkowalski/skill) ===
+   Custom easings — built-in CSS easings are too weak. Curves from
+   easing.dev / easings.co. UI animations stay under 300ms; press feedback
+   100-160ms; popovers 125-200ms; drawers/modals 200-500ms. */
+:root{
+  --ease-out:    cubic-bezier(0.23, 1, 0.32, 1);   /* strong ease-out — default for UI enters */
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);  /* on-screen movement */
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);   /* iOS-like drawer curve */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* subtle pop-in overshoot */
+  --t-press: 120ms;       /* button :active scale */
+  --t-hover: 160ms;       /* hover color/transform */
+  --t-pop:   180ms;       /* tooltips, small popovers */
+  --t-drop:  220ms;       /* dropdowns, selects */
+  --t-modal: 280ms;       /* modals, drawers */
+  --press-scale: 0.97;
+  --press-scale-sm: 0.98;
+}
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%;width:100%}
+/* === UNIVERSAL PRESS FEEDBACK (emilkowalski/skill) ===
+   Every pressable element should scale down on :active so the interface
+   feels like it's listening. Snappy (var(--t-press)) and subtle
+   (var(--press-scale)). Individual elements can override to a softer
+   0.98 or 0.96. Excluded: form inputs (text caret would jump). */
+button:not(:disabled):active,
+.big-btn:active,
+.auth-cta:active,
+.vote-btn:active,
+.deepdive-btn:active,
+.chip:active,
+.feature-tile:active,
+.card-label:active,
+.nav-item:active,
+.theme-pill:active,
+.guardian-bridge:active,
+button.big-btn:not(:disabled){transform:scale(var(--press-scale))}
 html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
 body{
   font-family:'Noto Sans SC','Source Sans 3',system-ui,'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji',sans-serif;
@@ -153,7 +188,7 @@ button:focus-visible,.big-btn:focus-visible,.chip:focus-visible,.nav-item:focus-
   padding:14px 14px;border-radius:12px;
   text-align:left;
   min-height:52px;
-  transition:all .2s;
+  transition:transform var(--t-press) var(--ease-out),background-color var(--t-hover) var(--ease-out),box-shadow var(--t-hover) var(--ease-out);
   width:100%;
 }
 .side-nav .nav-item:hover{background:rgba(255,255,255,.1);color:#fff}
@@ -389,9 +424,8 @@ label.field-label{display:block;font-weight:600;margin-bottom:8px;font-size:1rem
 #app.no-sidebar .screen select option{color:#1A1530;background:#fff}
 /* Entrance animation removed by user request — show instantly. */
 @media (prefers-reduced-motion:reduce){.auth-cta,.auth-cta.ghost{transition:none}}
-@keyframes authFade{from{opacity:0}to{opacity:1}}
-@keyframes authUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
-@keyframes authPop{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:none}}
+/* (Old authFade / authUp / authPop keyframes removed — auth stage now
+   uses an instant swap, no entrance animation, per design.) */
 @media (prefers-reduced-motion:reduce){.auth-shell,.auth-brand,.auth-title,.auth-sub,.auth-tabs,.auth-field,.auth-cta,.auth-note{animation:none}}
 
 /* === BIG TEXT TOGGLE (top status pill) === */
@@ -441,13 +475,18 @@ label.field-label{display:block;font-weight:600;margin-bottom:8px;font-size:1rem
   display:flex;align-items:center;justify-content:center;
   box-shadow:0 6px 20px rgba(249,115,22,.5);
   border:none;cursor:pointer;color:#fff;
-  z-index:60;transition:transform .2s;
-  animation:pulse 2.5s infinite;
+  z-index:60;transition:transform var(--t-press) var(--ease-out);
+  animation:bubblePulse 1.6s var(--ease-in-out) infinite;
 }
-.bubble-fab:hover{transform:scale(1.05)}
-.bubble-fab.active{background:linear-gradient(135deg,var(--primary),var(--primary-dark))}
+@media (hover: hover) and (pointer: fine) {
+  .bubble-fab:hover{transform:scale(1.05)}
+}
+.bubble-fab.active{background:var(--grad-sunset)}
 .bubble-fab svg{width:30px;height:30px}
-@keyframes pulse{0%,100%{box-shadow:0 6px 20px rgba(249,115,22,.5)}50%{box-shadow:0 6px 30px rgba(249,115,22,.7)}}
+@keyframes bubblePulse{
+  0%,100%{box-shadow:0 6px 20px rgba(197,56,179,.45)}
+  50%{box-shadow:0 8px 28px rgba(242,169,59,.65)}
+}
 
 /* === AI SHEET === */
 .sheet-mask{
@@ -506,7 +545,11 @@ label.field-label{display:block;font-weight:600;margin-bottom:8px;font-size:1rem
   transition:background .2s,transform .15s;
 }
 .mic-btn:hover{background:var(--primary-dark)}
-.mic-btn.recording{background:var(--danger);animation:pulse 1s infinite}
+.mic-btn.recording{background:var(--danger);animation:micPulse 1s var(--ease-in-out) infinite}
+@keyframes micPulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,0)}
+  50%{box-shadow:0 0 0 8px rgba(220,38,38,0)}
+}
 .mic-btn svg{width:24px;height:24px}
 .send-btn{
   height:52px;padding:0 18px;border-radius:999px;
@@ -550,7 +593,7 @@ label.field-label{display:block;font-weight:600;margin-bottom:8px;font-size:1rem
   font-size:.95rem;font-weight:600;color:var(--text-app);cursor:pointer;
   font-family:inherit;white-space:nowrap;
   min-height:48px;
-  transition:all .2s;
+  transition:transform var(--t-press) var(--ease-out),background-color var(--t-hover) var(--ease-out);
 }
 .chip.active{background:var(--primary);color:#fff;border-color:var(--primary)}
 .chip svg{width:18px;height:18px}
@@ -614,7 +657,7 @@ label.field-label{display:block;font-weight:600;margin-bottom:8px;font-size:1rem
 .news-toolbar .chip{cursor:pointer;flex-shrink:0}
 .news-ai-badge{position:absolute;top:10px;right:10px;background:linear-gradient(135deg,#8B5CF6,#6D28D9);color:#fff;padding:4px 10px;border-radius:8px;font-size:.7rem;font-weight:700;letter-spacing:.05em;backdrop-filter:blur(4px);box-shadow:0 2px 8px rgba(139,92,246,.3)}
 .news-actions{display:flex;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border-app);align-items:center}
-.vote-btn{display:inline-flex;align-items:center;gap:4px;padding:6px 10px;border-radius:10px;border:1.5px solid var(--border-app);background:transparent;color:var(--muted-app);font-family:inherit;font-weight:600;font-size:.8rem;cursor:pointer;transition:all .15s;min-height:36px}
+.vote-btn{display:inline-flex;align-items:center;gap:4px;padding:6px 10px;border-radius:10px;border:1.5px solid var(--border-app);background:transparent;color:var(--muted-app);font-family:inherit;font-weight:600;font-size:.8rem;cursor:pointer;transition:background-color var(--t-hover) var(--ease-out),color var(--t-hover) var(--ease-out),transform var(--t-press) var(--ease-out);min-height:36px}
 .vote-btn:hover{border-color:var(--primary);color:var(--primary)}
 .vote-btn.voted{background:var(--primary);color:#fff;border-color:var(--primary)}
 .vote-btn.down.voted{background:var(--danger);border-color:var(--danger)}
@@ -838,6 +881,25 @@ h3 .section-icon{margin-right:6px}
 
 @media(prefers-reduced-motion:reduce){
   *{animation:none!important;transition-duration:.01ms!important}
+  /* But still keep the page readable — just kill motion, not everything */
+  button:not(:disabled):active,
+  .big-btn:active,
+  .auth-cta:active,
+  .feature-tile:active,
+  .card-label:active,
+  .nav-item:active,
+  .theme-pill:active{transform:none!important}
+}
+/* === HOVER-ONLY INTERACTIONS (emilkowalski/skill) ===
+   Touch devices trigger :hover on tap, so scale-on-hover would feel
+   like a flash. Gate hover transforms behind a media query. */
+@media (hover: hover) and (pointer: fine) {
+  .feature-tile:hover{transform:translateY(-2px)}
+  .news-card:hover{transform:translateY(-2px)}
+  .card-label.card:hover{transform:translateY(-1px)}
+  .quote-card.hero:hover{transform:translateY(-1px)}
+  .stat-card:hover{transform:translateY(-1px)}
+  .med-card:hover{transform:translateY(-1px)}
 }
 </style>
 </head>

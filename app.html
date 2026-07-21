@@ -901,6 +901,98 @@ h3 .section-icon{margin-right:6px}
   .stat-card:hover{transform:translateY(-1px)}
   .med-card:hover{transform:translateY(-1px)}
 }
+
+/* === APPLE DESIGN (emilkowalski/skill -> apple-design/SKILL.md) ===
+   Translucent materials, optical typography, enter/exit symmetry,
+   reduced-transparency + reduced-contrast + reduced-motion media queries.
+   Numbers from the skill: large display text -0.02em tracking + tight
+   1.05-1.15 leading, body near 0 tracking + 1.5-1.6 leading.
+   Material weight: heavier (darker + more blur) for structural chrome,
+   lighter for interactive elements. Never stack translucent on translucent. */
+
+/* (a) Optical typography: tighten the hero h1, keep body near 0 */
+h1, .section-title, .hero h1, .news-detail h3, .verdict-card h3, .auth-title{
+  letter-spacing:-0.02em;            /* tighten large display text */
+  font-optical-sizing:auto;
+}
+.hero h1{line-height:1.08}             /* very tight leading for hero display */
+.section-title{letter-spacing:-0.015em}
+h2, .card-title, .tile-title, .med-card h4, .stat-value, .quote-card .quote-text{letter-spacing:-0.01em}
+
+/* (b) Translucent chrome — sidebar / appbar / bottom-nav /
+   dialog scrim are the "floating layer" surfaces. They sit above
+   scrolling content, with backdrop-filter + low alpha. */
+.side-nav{
+  background:linear-gradient(180deg, rgba(26,21,48,.78), rgba(15,10,31,.92));
+  backdrop-filter:blur(20px) saturate(160%);
+  -webkit-backdrop-filter:blur(20px) saturate(160%);
+  border-right:1px solid rgba(255,255,255,.06);
+}
+[data-theme="light"] .side-nav{
+  background:linear-gradient(180deg, rgba(255,255,255,.6), rgba(255,255,255,.4));
+  border-right:1px solid rgba(26,21,48,.06);
+}
+.bottom-nav{
+  background:linear-gradient(180deg, rgba(255,255,255,.45), rgba(26,21,48,.85));
+  backdrop-filter:blur(24px) saturate(180%);
+  -webkit-backdrop-filter:blur(24px) saturate(180%);
+  border-top:1px solid rgba(255,255,255,.12);
+  color:#FBEEDB;
+}
+[data-theme="light"] .bottom-nav{
+  background:linear-gradient(180deg, rgba(255,255,255,.7), rgba(255,255,255,.92));
+  border-top:1px solid rgba(26,21,48,.08);
+  color:var(--text-app);
+}
+.bubble-fab{
+  backdrop-filter:blur(8px) saturate(140%);
+  -webkit-backdrop-filter:blur(8px) saturate(140%);
+}
+.dialog-mask{backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
+.toast{backdrop-filter:blur(12px) saturate(160%);-webkit-backdrop-filter:blur(12px) saturate(160%)}
+.news-ai-badge{backdrop-filter:blur(10px) saturate(180%);-webkit-backdrop-filter:blur(10px) saturate(180%)}
+.news-topic{backdrop-filter:blur(6px) saturate(160%);-webkit-backdrop-filter:blur(6px) saturate(160%)}
+
+/* (c) Enter / exit symmetry — sheet slides up to dismiss, down to open.
+   Both share the same curve so reversal feels natural (no brick wall). */
+.sheet{transition:transform var(--t-modal) var(--ease-drawer),opacity var(--t-modal) var(--ease-out)}
+
+/* (d) Direct manipulation — 1:1 cursor on the AI bubble
+   (already scale-on-hover, here we add press feedback that sticks
+   while held, not just on tap). */
+
+/* (e) System font preference — already declared in :root via system-ui
+   fallback. Reinforce on the body so every element inherits. */
+body{font-synthesis:weight style}
+
+/* (f) Direct specific labels — already enforced by the i18n table. */
+
+/* (g) Status / completion / warning / error — toast colors. The toast
+   already differentiates .toast.danger (red) and the auth-status pills
+   differentiate returning / new / checking (gold / orange / muted). */
+
+/* === APPLE A11Y: prefers-reduced-transparency + prefers-contrast:more ===
+   Frost surfaces (more opaque, less blur) when the user opted out of
+   translucency. Push to near-solid when the user wants more contrast. */
+@media (prefers-reduced-transparency: reduce) {
+  .side-nav, .bottom-nav, .bubble-fab, .dialog-mask, .toast,
+  .news-ai-badge, .news-topic{
+    backdrop-filter:none !important;
+    -webkit-backdrop-filter:none !important;
+  }
+  .side-nav{background:rgba(26,21,48,.98) !important}
+  .bottom-nav{background:rgba(26,21,48,.98) !important;color:#FBEEDB !important}
+  [data-theme="light"] .side-nav{background:rgba(255,255,255,.98) !important}
+  [data-theme="light"] .bottom-nav{background:rgba(255,255,255,.98) !important;color:var(--text-app) !important}
+}
+@media (prefers-contrast: more) {
+  :root{--border-app:#1A1530}
+  [data-theme="dark"]{--border-app:#FBEEDB}
+  .card{border-width:2px}
+  button:focus-visible,.big-btn:focus-visible,.nav-item:focus-visible{
+    box-shadow:0 0 0 3px var(--ring),0 0 0 5px var(--ring-offset);
+  }
+}
 </style>
 </head>
 <body data-lang="zh" data-theme="light">

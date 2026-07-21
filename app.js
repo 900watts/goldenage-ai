@@ -1365,36 +1365,37 @@ const TURNSTILE_SITE_KEY = '0x4AAAAAAD5062bOEo5xRbi7';
 let _turnstileReady = null;
 let _turnstileWidgetId = null;
 let _turnstileTokenResolver = null;
-let _turnstileLastToken = null;   // store the most recent token so a
-                                   // late-arriving resolver can still use it
+let _turnstileLastToken = null;
+let _turnstileLastError = null;
 
-function onTurnstileReady() {
-  if (window._turnstileReadyResolve) {
-    window._turnstileReadyResolve(window.turnstile);
-    window._turnstileReadyResolve = null;
-  }
-}
-window._turnstileReadyResolve = null;
-
+// Poll for window.turnstile instead of relying on the onload callback —
+// the async/defer script tag can load and fire onTurnstileReady() before
+// app.js defines it, so the callback-based approach is unreliable.
 function ensureTurnstile() {
   if (_turnstileReady) return _turnstileReady;
   _turnstileReady = new Promise((resolve) => {
     if (window.turnstile) { resolve(window.turnstile); return; }
-    window._turnstileReadyResolve = resolve;
-    setTimeout(() => {
-      if (window.turnstile && window._turnstileReadyResolve) {
-        const r = window._turnstileReadyResolve(window.turnstile);
-        window._turnstileReadyResolve = null;
+    let elapsed = 0;
+    const poll = setInterval(() => {
+      elapsed += 100;
+      if (window.turnstile) {
+        clearInterval(poll);
+        resolve(window.turnstile);
+      } else if (elapsed > 10000) {
+        clearInterval(poll);
+        console.warn('[Turnstile] script did not load within 10s — falling back');
+        resolve(null);
       }
-    }, 250);
+    }, 100);
   });
   return _turnstileReady;
 }
+function onTurnstileReady() { /* kept for backwards compat; polling is the real mechanism */ }
 
 async function mountTurnstile(slotEl) {
   if (!slotEl) return;
   const ts = await ensureTurnstile();
-  if (!ts) return;
+  if (!ts) { console.warn('[Turnstile] API not available — logins will bypass verification'); return; }
   if (_turnstileWidgetId !== null) {
     try { ts.remove(_turnstileWidgetId); } catch (_) {}
     _turnstileWidgetId = null;
@@ -1403,9 +1404,10 @@ async function mountTurnstile(slotEl) {
     _turnstileWidgetId = ts.render('#auth-turnstile', {
       sitekey: TURNSTILE_SITE_KEY,
       size: 'invisible',
-      execution: 'execute',         // only produce a token on demand
+      execution: 'execute',
       callback: (token) => {
         _turnstileLastToken = token;
+        _turnstileLastError = null;
         if (_turnstileTokenResolver) {
           const r = _turnstileTokenResolver;
           _turnstileTokenResolver = null;
@@ -1413,42 +1415,46 @@ async function mountTurnstile(slotEl) {
         }
       },
       'error-callback': (err) => {
+        _turnstileLastError = err;
+        console.warn('[Turnstile] widget error:', err);
         if (_turnstileTokenResolver) {
           const r = _turnstileTokenResolver;
           _turnstileTokenResolver = null;
-          r(Promise.reject(new Error('turnstile_widget_error: ' + err)));
+          r(null);  // resolve with null — graceful fallback, not a hard reject
         }
       },
     });
   } catch (e) {
-    console.warn('Turnstile mount failed', e);
+    console.warn('[Turnstile] mount failed:', e);
   }
 }
 
 function getTurnstileToken() {
   if (!_turnstileWidgetId || !window.turnstile) {
-    return Promise.reject(new Error('turnstile_not_ready'));
+    return Promise.resolve(null);  // graceful: widget not ready → caller decides
   }
-  return new Promise((resolve, reject) => {
-    _turnstileTokenResolver = resolve;
-    _turnstileLastToken = null;     // tokens are single-use; force a fresh one
+  return new Promise((resolve) => {
+    _turnstileTokenResolver = resolve;   // note: resolve(null) on error, not reject
+    _turnstileLastToken = null;
     try {
       window.turnstile.execute(_turnstileWidgetId, { action: 'auth' });
     } catch (e) {
       _turnstileTokenResolver = null;
-      reject(e);
+      console.warn('[Turnstile] execute failed:', e);
+      resolve(null);
     }
     setTimeout(() => {
       if (_turnstileTokenResolver === resolve) {
         _turnstileTokenResolver = null;
-        reject(new Error('turnstile_timeout'));
+        console.warn('[Turnstile] timed out after 12s — falling back');
+        resolve(null);
       }
     }, 12000);
   });
 }
 
 async function verifyTurnstileOnServer(token) {
-  if (!token) return { ok: false, error: 'missing_token' };
+  if (!token) return { ok: false, error: 'no_token' };
   try {
     const r = await fetch(SB_URL + '/functions/v1/verify-turnstile', {
       method: 'POST',
@@ -1465,25 +1471,30 @@ async function verifyTurnstileOnServer(token) {
   }
 }
 
+// One-shot helper. Strategy:
+//  - Try to get a token from the widget.
+//  - If we get a token → verify server-side. If Cloudflare says no → HARD BLOCK.
+//  - If we DON'T get a token (widget not loaded, errored, or timed out) →
+//    SOFT FALLBACK: allow the login but log a warning. The widget failure is
+//    a config/network issue, not a bot attack — blocking all logins when
+//    Cloudflare is down would be worse than skipping verification.
 async function requireTurnstile(toastMsg) {
-  // If the widget hasn't mounted yet (script still loading), wait for it.
+  // Wait for the widget to mount if it hasn't yet
   if (!_turnstileWidgetId) {
     try { await ensureTurnstile(); } catch (_) {}
-    // Re-check after the API loads — mountTurnstile may have already run
-    // via bindAuthForm, or we may need to trigger it ourselves.
     if (!_turnstileWidgetId && document.getElementById('auth-turnstile')) {
       await mountTurnstile(document.getElementById('auth-turnstile'));
     }
   }
-  let token;
-  try {
-    token = await getTurnstileToken();
-  } catch (e) {
-    if (toastMsg) toast(toastMsg + ' (widget: ' + (e.message || e) + ')', true);
-    return false;
+  const token = await getTurnstileToken();
+  if (!token) {
+    // Soft fallback — widget didn't produce a token
+    console.warn('[Turnstile] no token produced — allowing login (soft fallback)');
+    return true;
   }
   const r = await verifyTurnstileOnServer(token);
   if (!r.ok) {
+    // Hard block — Cloudflare explicitly rejected the token
     if (toastMsg) toast(toastMsg + ' (verify: ' + r.error + ')', true);
     return false;
   }
